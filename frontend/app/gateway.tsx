@@ -107,6 +107,12 @@ export default function GatewayScreen() {
           <Text style={styles.noteText}>{configured ? t("gw_note") : t("gw_not_set")}</Text>
         </View>
 
+        <Pressable testID="gateway-guide-button" onPress={() => router.push("/panduan")} style={styles.guideBtn}>
+          <Icon name="book-open-variant" size={18} color={colors.onBrandTertiary} />
+          <Text style={styles.guideText}>{t("guide_open")}</Text>
+          <Icon name="chevron-right" size={20} color={colors.onBrandTertiary} />
+        </Pressable>
+
         <View style={styles.card}>
           <Text style={styles.label}>{t("gw_host")}</Text>
           <TextInput
@@ -211,6 +217,8 @@ const useStyles = makeStyles((colors) => ({
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.md },
   noteCard: { flexDirection: "row", gap: spacing.sm, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.md, padding: spacing.md },
   noteText: { flex: 1, color: colors.onSurfaceTertiary, fontSize: font.sm, lineHeight: 18 },
+  guideBtn: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.brandTertiary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 48 },
+  guideText: { flex: 1, color: colors.onBrandTertiary, fontSize: font.sm, fontWeight: "800", letterSpacing: 0.5 },
   card: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.lg, padding: spacing.lg },
   label: { color: colors.muted, fontSize: 11, fontWeight: "700", letterSpacing: 1, marginBottom: spacing.sm, marginTop: spacing.md },
   input: { backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.md, color: colors.onSurface, fontSize: font.base, fontFamily: mono, paddingHorizontal: spacing.md, height: 52 },

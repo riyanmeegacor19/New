@@ -295,6 +295,14 @@ export default function BerandaScreen() {
           </View>
           <Icon name="chevron-right" size={24} color={colors.muted} />
         </Pressable>
+        <Pressable testID="go-guide-card" onPress={() => router.push("/panduan")} style={styles.linkCard}>
+          <Icon name="book-open-variant" size={22} color={colors.warning} />
+          <View style={styles.flex1}>
+            <Text style={styles.linkTitle}>{t("link_guide")}</Text>
+            <Text style={styles.linkSub}>{t("link_guide_sub")}</Text>
+          </View>
+          <Icon name="chevron-right" size={24} color={colors.muted} />
+        </Pressable>
         <Pressable testID="go-plans-card" onPress={() => router.push("/langganan")} style={styles.linkCard}>
           <Icon name="crown" size={22} color={colors.warning} />
           <View style={styles.flex1}>
