@@ -2,7 +2,7 @@ import Icon from "@react-native-vector-icons/material-design-icons";
 import { ReactNode } from "react";
 import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from "react-native";
 
-import { font, glow, radius, spacing, useTheme } from "@/src/theme";
+import { glow, radius, spacing, useTheme } from "@/src/theme";
 
 // L-shaped neon corner brackets overlay — the classic gaming/HUD frame.
 export function NeonCorners({ color, size = 14 }: { color: string; size?: number }) {

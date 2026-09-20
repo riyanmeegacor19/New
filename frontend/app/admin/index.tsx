@@ -5,7 +5,8 @@ import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-nati
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, AdminStatsT } from "@/src/api";
-import { font, makeStyles, radius, spacing, useTheme } from "@/src/theme";
+import { SectionHeader } from "@/src/components/hud";
+import { font, glow, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
 export default function AdminHome() {
   const { colors } = useTheme();
@@ -30,17 +31,19 @@ export default function AdminHome() {
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} showsVerticalScrollIndicator={false}>
+        <SectionHeader title="Ringkasan" icon="chart-box" />
         {statsQ.isLoading ? (
           <ActivityIndicator size="large" color={colors.brandPrimary} style={{ marginTop: 30 }} />
         ) : (
           <View style={styles.statsGrid}>
-            <Stat label="Total Pelanggan" value={String(s?.total_customers ?? 0)} styles={styles} colors={colors} />
-            <Stat label="Pelanggan Aktif" value={String(s?.active_customers ?? 0)} styles={styles} colors={colors} accent />
-            <Stat label="Pesanan Pending" value={String(s?.pending_orders ?? 0)} styles={styles} colors={colors} warn={!!s?.pending_orders} />
-            <Stat label="Total Pendapatan" value={s?.revenue_label ?? "Rp 0"} styles={styles} colors={colors} accent />
+            <Stat icon="account-multiple" label="Total Pelanggan" value={String(s?.total_customers ?? 0)} styles={styles} colors={colors} accent={colors.info} />
+            <Stat icon="account-check" label="Pelanggan Aktif" value={String(s?.active_customers ?? 0)} styles={styles} colors={colors} accent={colors.brandPrimary} />
+            <Stat icon="clock-alert-outline" label="Pesanan Pending" value={String(s?.pending_orders ?? 0)} styles={styles} colors={colors} accent={s?.pending_orders ? colors.warning : colors.muted} />
+            <Stat icon="cash-multiple" label="Total Pendapatan" value={s?.revenue_label ?? "Rp 0"} styles={styles} colors={colors} accent={colors.brandPrimary} />
           </View>
         )}
 
+        <SectionHeader title="Manajemen" icon="tune-variant" />
         <NavCard icon="receipt-text" title="Pesanan" sub="Konfirmasi pembayaran pelanggan" badge={s?.pending_orders} onPress={() => router.push("/admin/orders")} styles={styles} colors={colors} />
         <NavCard icon="account-group" title="Pelanggan" sub="Kelola akun, paket & kredensial" onPress={() => router.push("/admin/customers")} styles={styles} colors={colors} />
         <NavCard icon="package-variant" title="Paket" sub="Atur harga, durasi & kuota" onPress={() => router.push("/admin/packages")} styles={styles} colors={colors} />
@@ -50,10 +53,15 @@ export default function AdminHome() {
   );
 }
 
-function Stat({ label, value, styles, colors, accent, warn }: any) {
+function Stat({ icon, label, value, styles, colors, accent }: any) {
+  const c = accent ?? colors.onSurface;
   return (
     <View style={styles.statCard}>
-      <Text style={[styles.statValue, accent ? { color: colors.brandPrimary } : warn ? { color: colors.warning } : null]}>{value}</Text>
+      <View style={[styles.statTopBar, { backgroundColor: c }, glow(c, 8)]} />
+      <View style={[styles.statIconBox, { borderColor: c }, glow(c, 5)]}>
+        <Icon name={icon} size={18} color={c} />
+      </View>
+      <Text style={[styles.statValue, { color: c }]}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
@@ -62,7 +70,9 @@ function Stat({ label, value, styles, colors, accent, warn }: any) {
 function NavCard({ icon, title, sub, badge, onPress, styles, colors }: any) {
   return (
     <Pressable testID={`admin-nav-${title.toLowerCase()}`} onPress={onPress} style={styles.navCard}>
-      <Icon name={icon} size={24} color={colors.brandPrimary} />
+      <View style={[styles.navIconBox, { borderColor: colors.brandPrimary }, glow(colors.brandPrimary, 6)]}>
+        <Icon name={icon} size={22} color={colors.brandPrimary} />
+      </View>
       <View style={styles.flex1}>
         <Text style={styles.navTitle}>{title}</Text>
         <Text style={styles.navSub}>{sub}</Text>
@@ -82,10 +92,13 @@ const useStyles = makeStyles((colors) => ({
   subtitle: { color: colors.muted, fontSize: font.sm, marginTop: 2 },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.md },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
-  statCard: { flexBasis: "47%", flexGrow: 1, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.lg, padding: spacing.lg },
-  statValue: { color: colors.onSurface, fontSize: font.xxl, fontWeight: "800" },
+  statCard: { flexBasis: "47%", flexGrow: 1, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg, overflow: "hidden" },
+  statTopBar: { position: "absolute", top: 0, left: 0, right: 0, height: 3 },
+  statIconBox: { width: 38, height: 38, borderRadius: radius.md, borderWidth: 1, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center", marginBottom: spacing.md },
+  statValue: { fontSize: font.xxl, fontWeight: "800" },
   statLabel: { color: colors.muted, fontSize: font.sm, marginTop: spacing.xs },
-  navCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.lg, padding: spacing.lg },
+  navCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.lg, padding: spacing.md },
+  navIconBox: { width: 46, height: 46, borderRadius: radius.md, borderWidth: 1, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center" },
   navTitle: { color: colors.onSurface, fontSize: font.lg, fontWeight: "700" },
   navSub: { color: colors.onSurfaceTertiary, fontSize: font.sm, marginTop: 2 },
   badge: { minWidth: 24, height: 24, borderRadius: 12, backgroundColor: colors.warning, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },

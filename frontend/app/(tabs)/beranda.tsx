@@ -17,10 +17,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, formatBytes, UserT } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { SectionHeader } from "@/src/components/hud";
 import { useToast } from "@/src/components/toast";
 import { useSettings } from "@/src/settings";
 import { usesNativeTabs } from "@/src/navigation";
-import { font, makeStyles, mono, radius, spacing, useTheme } from "@/src/theme";
+import { font, glow, makeStyles, mono, radius, spacing, useTheme } from "@/src/theme";
 
 function countdown(target: string | null, now: number) {
   if (!target) return { d: 0, h: 0, m: 0, s: 0, expired: true };
@@ -283,6 +284,8 @@ export default function BerandaScreen() {
           <>
             <SectionHeader title="Panel Kontrol" icon="shield-crown" />
             <LinkCard testID="go-admin-card" icon="shield-crown" color={colors.brandPrimary} title="Panel Admin" sub="Kelola pelanggan, pesanan & pengaturan" onPress={() => router.push("/admin")} styles={styles} colors={colors} />
+            <LinkCard testID="go-servers-card" icon="server-network" color={colors.brandPrimary} title={t("link_servers")} sub={t("link_servers_sub")} onPress={() => router.push("/servers")} styles={styles} colors={colors} />
+            <LinkCard testID="go-gateway-card" icon="transit-connection-variant" color={colors.brandPrimary} title={t("link_gateway")} sub={t("link_gateway_sub")} onPress={() => router.push("/gateway")} styles={styles} colors={colors} />
           </>
         ) : (
           <>
@@ -297,8 +300,6 @@ export default function BerandaScreen() {
         <SectionHeader title="Alat Hunter" icon="target" />
         <LinkCard testID="go-hunting-card" icon="target" color={colors.brandPrimary} title={t("link_hunting")} sub={t("link_hunting_sub")} onPress={() => router.push("/hunting")} styles={styles} colors={colors} />
         <LinkCard testID="go-cekip-card" icon="web" color={colors.info} title={t("link_cekip")} sub={t("link_cekip_sub")} onPress={() => router.push("/cekip")} styles={styles} colors={colors} />
-        <LinkCard testID="go-servers-card" icon="server-network" color={colors.brandPrimary} title={t("link_servers")} sub={t("link_servers_sub")} onPress={() => router.push("/servers")} styles={styles} colors={colors} />
-        <LinkCard testID="go-gateway-card" icon="transit-connection-variant" color={colors.brandPrimary} title={t("link_gateway")} sub={t("link_gateway_sub")} onPress={() => router.push("/gateway")} styles={styles} colors={colors} />
 
         <SectionHeader title="Info & Bantuan" icon="information-outline" />
         <LinkCard testID="go-guide-card" icon="book-open-variant" color={colors.warning} title={t("link_guide")} sub={t("link_guide_sub")} onPress={() => router.push("/panduan")} styles={styles} colors={colors} />
@@ -355,6 +356,21 @@ export default function BerandaScreen() {
         </View>
       </Modal>
     </View>
+  );
+}
+
+function LinkCard({ icon, title, sub, onPress, testID, color, styles, colors }: any) {
+  return (
+    <Pressable testID={testID} onPress={onPress} style={styles.linkCard}>
+      <View style={[styles.linkIconBox, { borderColor: color }, glow(color, 6)]}>
+        <Icon name={icon} size={20} color={color} />
+      </View>
+      <View style={styles.flex1}>
+        <Text style={styles.linkTitle}>{title}</Text>
+        <Text style={styles.linkSub}>{sub}</Text>
+      </View>
+      <Icon name="chevron-right" size={22} color={colors.muted} />
+    </Pressable>
   );
 }
 
@@ -499,7 +515,16 @@ const useStyles = makeStyles((colors) => ({
     borderWidth: 1,
     borderColor: colors.divider,
     borderRadius: radius.lg,
-    padding: spacing.lg,
+    padding: spacing.md,
+  },
+  linkIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: "center",
+    justifyContent: "center",
   },
   linkTitle: { color: colors.onSurface, fontSize: font.lg, fontWeight: "700" },
   linkSub: { color: colors.onSurfaceTertiary, fontSize: font.sm, marginTop: 2 },
