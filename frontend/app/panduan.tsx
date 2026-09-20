@@ -1,10 +1,11 @@
 import Icon from "@react-native-vector-icons/material-design-icons";
 import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { Segmented } from "@/src/components/segmented";
 import { useToast } from "@/src/components/toast";
 import { font, makeStyles, mono, radius, spacing, useTheme } from "@/src/theme";
 
@@ -51,6 +52,7 @@ export default function PanduanScreen() {
   const styles = useStyles();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const [tab, setTab] = useState("vps");
 
   return (
     <View style={styles.screen}>
@@ -65,6 +67,15 @@ export default function PanduanScreen() {
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} showsVerticalScrollIndicator={false}>
+        <Segmented
+          testIdPrefix="panduan-tab"
+          options={[{ value: "vps", label: "GATEWAY VPS" }, { value: "pool", label: "IP POOL" }]}
+          value={tab}
+          onChange={setTab}
+        />
+
+        {tab === "vps" ? (
+          <>
         <View style={styles.intro}>
           <Icon name="information-outline" size={18} color={colors.brandPrimary} />
           <Text style={styles.introText}>
@@ -132,6 +143,64 @@ export default function PanduanScreen() {
           <Icon name="transit-connection-variant" size={20} color={colors.onBrandPrimary} />
           <Text style={styles.ctaText}>BUKA SAMBUNG GATEWAY</Text>
         </Pressable>
+          </>
+        ) : (
+          <>
+            <View style={styles.intro}>
+              <Icon name="earth" size={18} color={colors.brandPrimary} />
+              <Text style={styles.introText}>
+                IP Pool residential/mobile membuat trafik keluar dari IP rumahan asli (bukan datacenter), sehingga sulit terdeteksi. Ini layanan berbayar dari penyedia khusus — bayar per GB atau per jumlah IP.
+              </Text>
+            </View>
+
+            <Step n={1} title="Pilih penyedia IP Pool">
+              <Text style={styles.p}>Penyedia populer & tepercaya:</Text>
+              <View style={styles.kv}><Text style={styles.k}>IPRoyal</Text><Text style={styles.v}>murah, per GB</Text></View>
+              <View style={styles.kv}><Text style={styles.k}>Smartproxy</Text><Text style={styles.v}>mudah dipakai</Text></View>
+              <View style={styles.kv}><Text style={styles.k}>Bright Data</Text><Text style={styles.v}>pool terbesar</Text></View>
+              <View style={styles.kv}><Text style={styles.k}>Oxylabs</Text><Text style={styles.v}>enterprise</Text></View>
+              <Text style={styles.hint}>Untuk mulai murah, IPRoyal Royal Residential adalah pilihan aman.</Text>
+            </Step>
+
+            <Step n={2} title="Daftar & isi saldo">
+              <Text style={styles.p}>
+                Buat akun di situs penyedia, isi saldo (kartu/PayPal/crypto), lalu pilih produk Residential/Mobile. Anda akan membuat sebuah proxy user (kadang disebut zone/channel).
+              </Text>
+            </Step>
+
+            <Step n={3} title="Ambil endpoint & kredensial">
+              <Text style={styles.p}>Di dashboard penyedia, salin detail koneksi. Contoh format umum:</Text>
+              <View style={styles.kv}><Text style={styles.k}>Host</Text><Text style={styles.v}>proxy.provider.com</Text></View>
+              <View style={styles.kv}><Text style={styles.k}>Port</Text><Text style={styles.v}>12321</Text></View>
+              <View style={styles.kv}><Text style={styles.k}>Username</Text><Text style={styles.v}>user-abcdef</Text></View>
+              <View style={styles.kv}><Text style={styles.k}>Password</Text><Text style={styles.v}>passwordkamu</Text></View>
+              <Text style={styles.hint}>Sebagian penyedia menaruh opsi lokasi di username, mis: user-country-id atau user-city-jakarta.</Text>
+            </Step>
+
+            <Step n={4} title="Pilih rotating / sticky">
+              <Text style={styles.p}>
+                Rotating: IP berganti tiap request (bagus untuk scraping). Sticky: IP tetap beberapa menit (bagus untuk login). Biasanya diatur lewat port berbeda atau akhiran username, contoh:
+              </Text>
+              <CodeBlock code={"user-country-id-session-abc123"} />
+              <Text style={styles.hint}>Cek dokumentasi penyedia untuk pola sticky session mereka.</Text>
+            </Step>
+
+            <Step n={5} title="Sambungkan ke RIYANMEE PROXY">
+              <Text style={styles.p}>Buka menu Sambung Gateway, lalu isi endpoint dari penyedia:</Text>
+              <View style={styles.kv}><Text style={styles.k}>Host</Text><Text style={styles.v}>proxy.provider.com</Text></View>
+              <View style={styles.kv}><Text style={styles.k}>Port</Text><Text style={styles.v}>12321</Text></View>
+              <View style={styles.kv}><Text style={styles.k}>Protokol</Text><Text style={styles.v}>HTTP / SOCKS5</Text></View>
+              <View style={styles.kv}><Text style={styles.k}>Username</Text><Text style={styles.v}>user-abcdef</Text></View>
+              <View style={styles.kv}><Text style={styles.k}>Password</Text><Text style={styles.v}>passwordkamu</Text></View>
+              <Text style={styles.hint}>Tekan SIMPAN & TES KONEKSI. Bila ONLINE, hasil HUBUNGKAN akan memakai IP pool asli Anda.</Text>
+            </Step>
+
+            <Pressable testID="panduan-goto-gateway-pool" onPress={() => router.replace("/gateway")} style={styles.cta}>
+              <Icon name="transit-connection-variant" size={20} color={colors.onBrandPrimary} />
+              <Text style={styles.ctaText}>BUKA SAMBUNG GATEWAY</Text>
+            </Pressable>
+          </>
+        )}
       </ScrollView>
     </View>
   );
