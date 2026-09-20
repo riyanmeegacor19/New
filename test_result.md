@@ -199,7 +199,53 @@ backend:
         -comment: "Existing endpoints unchanged except /plans and /subscription/activate now read packages from DB. Verify no regression."
         -working: true
         -agent: "testing"
-        -comment: "PASSED. All existing endpoints verified working with no regression: (1) POST /api/subscription/activate with plan_id=day30 returns updated user (reads packages from DB). (2) GET /api/auth/me returns user data. (3) GET /api/profile returns user profile. (4) POST /api/tools/ip-info with ip=8.8.8.8 returns geo data. (5) POST /api/hunt with target_ip=8.8.8.8 mode=ultimate returns proxy results. (6) GET /api/gateway returns gateway config. All regression tests passed."
+        -comment: "PASSED. All existing endpoints verified working with no regression."
+
+  - task: "Proxy gateway endpoints (/api/proxy/authorize + /api/proxy/usage) for real Bright Data routing (Fase 2)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: >
+          NEW Fase 2 endpoints for the VPS proxy gateway. Both protected by Bearer PROXY_GATEWAY_TOKEN
+          (env, value in backend/.env). (1) POST /api/proxy/authorize {username,password}: returns
+          {active,reason,customer_id,country,package_id}. active=false with reason for: not_found,
+          admin_account, bad_credentials, suspended, no_package, expired, quota_exceeded. Validates
+          proxy_password (plaintext match), status active, package_id present, expires_at>now, and
+          bandwidth_used_mb < bandwidth_limit_mb (if limit>0). Never returns any upstream/BrightData secret.
+          (2) POST /api/proxy/usage {username,bytes_up,bytes_down}: increments bandwidth_used_bytes and
+          traffic_bytes via find_one_and_update(return_document=True), then sets bandwidth_used_mb =
+          bytes//1048576. Added UserDoc.bandwidth_used_bytes field. require_gateway returns 401 for
+          missing/wrong token, 503 if token unset. TEST NEEDED: create a customer (admin) with a package
+          (day7) so proxy_password/country/bandwidth_limit_mb are set, read proxy_password from
+          GET /api/admin/customers, then: authorize with correct creds+token -> active=true, country set;
+          authorize wrong password -> active=false reason=bad_credentials; authorize without/with wrong
+          token -> 401; usage POST bytes -> bandwidth_used_mb increases and reflects in
+          GET /api/admin/customers; over-quota (set bandwidth_used_mb>=limit via PATCH customer) ->
+          authorize active=false reason=quota_exceeded.
+        -working: true
+        -agent: "testing"
+        -comment: >
+          PASSED. All 10 test scenarios verified successfully: (1) Admin login with idmee/riyanmee123 
+          returns access_token. (2) Created test customer gwtest1 with package_id=day7, country=US - 
+          customer created with proxy_password=rmx-35d88199ef, bandwidth_limit_mb=10240 (10GB). 
+          (3) Retrieved proxy_password from GET /api/admin/customers. (4) POST /api/proxy/authorize 
+          with correct credentials + Bearer PROXY_GATEWAY_TOKEN returns HTTP 200, active=true, 
+          reason="ok", customer_id="gwtest1", country="us", package_id="day7". (5) Authorize with 
+          wrong password returns HTTP 200, active=false, reason="bad_credentials". (6) Authorize 
+          without Authorization header returns HTTP 401. (7) Authorize with wrong Bearer token 
+          returns HTTP 401. (8) POST /api/proxy/usage with bytes_up=52428800, bytes_down=52428800 
+          (100MB total) returns HTTP 200, ok=true, bandwidth_used_mb=100. Verified via 
+          GET /api/admin/customers that bandwidth_used_mb=100. (9) Set bandwidth_used_mb=10240 
+          (at limit) via PATCH /api/admin/customers, then authorize returns HTTP 200, active=false, 
+          reason="quota_exceeded". (10) DELETE /api/admin/customers cleanup successful. Both proxy 
+          gateway endpoints working perfectly with correct authentication, authorization logic, 
+          bandwidth tracking, and quota enforcement.
 
 frontend:
   - task: "Reseller frontend (admin panel + customer proxy/buy screens)"
@@ -217,16 +263,11 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 2
+  test_sequence: 3
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "Admin role + seed idmee as admin"
-    - "Packages DB-driven (GET /api/plans) + admin packages CRUD"
-    - "Customer orders flow (create/list/mine) + manual confirm/reject"
-    - "Admin customers management (list/create/update/delete)"
-    - "Settings (payment info, proxy host, countries, upstream) + proxy-account + payment-info + countries"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -234,30 +275,25 @@ test_plan:
 agent_communication:
     -agent: "main"
     -message: >
-      Fase 1 backend reseller selesai. Tolong test SEMUA endpoint reseller baru dengan admin
-      idmee/riyanmee123 (role admin) dan seorang customer yang di-register lewat /api/auth/register.
-      Fokus: (1) require_admin harus 403 untuk non-admin, (2) alur order pending->confirm mengaktifkan
-      pelanggan (expiry bertambah, country/package/quota terisi, proxy_password ada) dan proxy-account
-      mengembalikan active=true, (3) blokir duplicate pending order (409), (4) packages CRUD & settings
-      PUT persist, (5) regression /api/plans, /api/subscription/activate, auth, gateway, hunt, ip-info.
-      Base URL pakai EXPO_PUBLIC_BACKEND_URL + /api (semua route sudah prefix /api). Tolong bersihkan
-      user test yang Anda buat bila memungkinkan.
+      FASE 2: Tolong test HANYA endpoint gateway baru: POST /api/proxy/authorize dan POST /api/proxy/usage.
+      Keduanya butuh header Authorization: Bearer <PROXY_GATEWAY_TOKEN> (ambil nilainya dari backend/.env,
+      key PROXY_GATEWAY_TOKEN). Skenario: (1) login admin idmee/riyanmee123, buat customer baru via
+      POST /api/admin/customers dengan package_id=day7 & country=us (ini otomatis set proxy_password,
+      country, bandwidth_limit_mb). Ambil proxy_password dari GET /api/admin/customers. (2) authorize
+      dengan {username, password=proxy_password} + token benar -> active=true, country=us. (3) authorize
+      password salah -> active=false reason=bad_credentials (HTTP 200). (4) authorize tanpa token / token
+      salah -> 401. (5) usage POST {username, bytes_up, bytes_down} + token -> ok:true dan bandwidth_used_mb
+      naik; verifikasi lewat GET /api/admin/customers. (6) set kuota habis via PATCH
+      /api/admin/customers/{id} {bandwidth_used_mb: <= besar>=limit} lalu authorize -> active=false
+      reason=quota_exceeded. Bersihkan customer test bila memungkinkan. Jangan test fitur lain.
     -agent: "testing"
     -message: >
-      COMPREHENSIVE BACKEND TESTING COMPLETED - ALL TESTS PASSED ✅
-      
-      Tested all 6 backend task groups with 27 individual test scenarios. ALL functionality verified working correctly:
-      
-      1. AUTH/ROLE: ✅ Admin login (role=admin), customer register (role=customer), require_admin protection (403 for non-admin, 401 for no token)
-      
-      2. PACKAGES: ✅ GET /api/plans returns day7/day30/day90 with bandwidth_gb/price/features. Admin CRUD (GET/POST/PATCH/DELETE) fully functional, non-admin blocked with 403
-      
-      3. ORDER FLOW: ✅ Complete flow verified - create order (pending), duplicate blocked (409), list orders (mine & admin), confirm order (activates customer with correct package/country/bandwidth/expiry), reject order, stats show revenue
-      
-      4. ADMIN CUSTOMERS: ✅ Full CRUD - create with package (sets bandwidth 50GB for day30), list, update (suspend/add_days/regenerate_password), soft delete
-      
-      5. SETTINGS: ✅ GET/PUT admin settings (payment_info BCA/1462261696, proxy_host 155.138.227.248:1080), customer endpoints (payment-info, countries, proxy-account)
-      
-      6. REGRESSION: ✅ All existing endpoints working - subscription/activate, auth/me, profile, ip-info, hunt, gateway
-      
-      Backend logs confirm all requests returning correct status codes. Manual verification confirms 100% functionality. Ready for frontend development.
+      FASE 2 PROXY GATEWAY TESTING COMPLETE - ALL TESTS PASSED (10/10). Both /api/proxy/authorize and 
+      /api/proxy/usage endpoints are working perfectly. All scenarios verified: (1) Admin login successful, 
+      (2) Customer creation with package sets proxy_password and bandwidth_limit_mb correctly, 
+      (3) Authorize with correct credentials returns active=true with country and customer_id, 
+      (4) Authorize with wrong password returns active=false reason=bad_credentials, (5) Authorize 
+      without token or with wrong token returns 401, (6) Usage reporting increments bandwidth_used_mb 
+      correctly and persists to database, (7) Quota exceeded scenario returns active=false 
+      reason=quota_exceeded when bandwidth_used_mb >= bandwidth_limit_mb. Gateway authentication 
+      (PROXY_GATEWAY_TOKEN) working correctly. No issues found. Ready for production use.

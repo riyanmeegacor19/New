@@ -33,6 +33,7 @@ JWT_ALGO = "HS256"
 JWT_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "43200"))
 DEMO_USERNAME = os.environ.get("DEMO_USERNAME", "idmee")
 DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "riyanmee123")
+PROXY_GATEWAY_TOKEN = os.environ.get("PROXY_GATEWAY_TOKEN", "")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("riyanmee")
@@ -91,6 +92,7 @@ class UserDoc(BaseDocument):
     package_name: str = ""
     bandwidth_limit_mb: int = 0  # 0 = unlimited / not set
     bandwidth_used_mb: int = 0
+    bandwidth_used_bytes: int = 0  # precise byte counter reported by the VPS gateway
     server_host: str = "server.riyanmee.web.id"
     server_port: int = 5245
     proxy_password: str = ""
@@ -225,7 +227,7 @@ DEFAULT_SETTINGS = {
     "upstream": {
         "provider": "brightdata",
         "host": "brd.superproxy.io",
-        "port": 22225,
+        "port": 44445,
         "zone": "residential",
         "username": "",
         "password": "",
@@ -287,6 +289,18 @@ class SettingsUpdateIn(BaseModel):
     upstream: Optional[dict] = None
 
 
+class ProxyAuthorizeIn(BaseModel):
+    username: str
+    password: str
+
+
+class ProxyUsageIn(BaseModel):
+    username: str = ""
+    customer_id: str = ""
+    bytes_up: int = 0
+    bytes_down: int = 0
+
+
 
 # ---------------------------------------------------------------------------
 # Auth helpers
@@ -334,6 +348,17 @@ async def require_admin(user: Annotated[UserDoc, Depends(current_user)]) -> User
     if getattr(user, "role", "customer") != "admin":
         raise HTTPException(status_code=403, detail="Akses khusus admin")
     return user
+
+
+async def require_gateway(
+    credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(bearer)],
+) -> bool:
+    """Auth for the VPS proxy gateway. Uses a shared bearer token (PROXY_GATEWAY_TOKEN)."""
+    if not PROXY_GATEWAY_TOKEN:
+        raise HTTPException(status_code=503, detail="Gateway token belum dikonfigurasi")
+    if not credentials or credentials.scheme.lower() != "bearer" or credentials.credentials != PROXY_GATEWAY_TOKEN:
+        raise HTTPException(status_code=401, detail="Gateway tidak diizinkan")
+    return True
 
 
 async def get_settings_doc() -> dict:
@@ -1068,6 +1093,75 @@ async def create_order(body: OrderCreateIn, user: Annotated[UserDoc, Depends(cur
 async def my_orders(user: Annotated[UserDoc, Depends(current_user)]):
     docs = await db.orders.find({"user_id": str(user.id)}).sort("created_at", -1).limit(50).to_list(50)
     return [order_out(d) for d in docs]
+
+
+# ---------------------------------------------------------------------------
+# Proxy gateway (called by the VPS gateway, protected by PROXY_GATEWAY_TOKEN)
+# ---------------------------------------------------------------------------
+@api_router.post("/proxy/authorize")
+async def proxy_authorize(body: ProxyAuthorizeIn, _: Annotated[bool, Depends(require_gateway)]):
+    """Validate an end-customer's proxy credentials and return their exit country.
+
+    Called by the VPS gateway on each new proxy connection. Never returns any
+    Bright Data / upstream secrets — those live only in the VPS env file.
+    """
+    username = normalize_username(body.username)
+    doc = await db.users.find_one({"username": username, "deleted_at": None})
+    if not doc:
+        return {"active": False, "reason": "not_found"}
+    user = UserDoc.from_mongo(doc)
+    if getattr(user, "role", "customer") == "admin":
+        return {"active": False, "reason": "admin_account"}
+    if not user.proxy_password or body.password != user.proxy_password:
+        return {"active": False, "reason": "bad_credentials"}
+
+    now = utcnow()
+    exp = user.expires_at
+    if exp and exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    reason = "ok"
+    active = True
+    if getattr(user, "status", "active") != "active":
+        active, reason = False, "suspended"
+    elif not user.package_id:
+        active, reason = False, "no_package"
+    elif not (exp and exp > now):
+        active, reason = False, "expired"
+    else:
+        limit = int(getattr(user, "bandwidth_limit_mb", 0) or 0)
+        used = int(getattr(user, "bandwidth_used_mb", 0) or 0)
+        if limit > 0 and used >= limit:
+            active, reason = False, "quota_exceeded"
+
+    country = (getattr(user, "country", "") or "").strip().lower()
+    return {
+        "active": active,
+        "reason": reason,
+        "customer_id": user.username,
+        "country": country,
+        "package_id": user.package_id,
+    }
+
+
+@api_router.post("/proxy/usage")
+async def proxy_usage(body: ProxyUsageIn, _: Annotated[bool, Depends(require_gateway)]):
+    """Record bandwidth reported by the VPS gateway and keep quota counters in sync."""
+    username = normalize_username(body.username or body.customer_id)
+    if not username:
+        raise HTTPException(status_code=400, detail="username wajib diisi")
+    total = max(0, int(body.bytes_up)) + max(0, int(body.bytes_down))
+    if total <= 0:
+        return {"ok": True, "bandwidth_used_mb": None}
+    updated = await db.users.find_one_and_update(
+        {"username": username, "deleted_at": None},
+        {"$inc": {"bandwidth_used_bytes": total, "traffic_bytes": total}},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Pelanggan tidak ditemukan")
+    used_mb = int(updated.get("bandwidth_used_bytes", 0)) // (1024 * 1024)
+    await db.users.update_one({"username": username}, {"$set": {"bandwidth_used_mb": used_mb}})
+    return {"ok": True, "bandwidth_used_mb": used_mb}
 
 
 # ---------------------------------------------------------------------------
