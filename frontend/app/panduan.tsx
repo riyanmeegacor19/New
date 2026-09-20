@@ -83,6 +83,24 @@ export default function PanduanScreen() {
           </Text>
         </View>
 
+        <View style={styles.phoneCard}>
+          <View style={styles.phoneHead}>
+            <Icon name="cellphone-check" size={20} color={colors.brandPrimary} />
+            <Text style={styles.phoneTitle}>Tanpa komputer? Pakai HP</Text>
+          </View>
+          <Text style={styles.p}>
+            Anda bisa setup VPS langsung dari HP. Install aplikasi SSH gratis dari Play Store / App Store:
+          </Text>
+          <View style={styles.kv}><Text style={styles.k}>Android</Text><Text style={styles.v}>Termius / JuiceSSH / Termux</Text></View>
+          <View style={styles.kv}><Text style={styles.k}>iPhone</Text><Text style={styles.v}>Termius / Blink Shell</Text></View>
+          <Text style={styles.p}>Cara pakai Termius (paling mudah):</Text>
+          <Text style={styles.li}>1. Buka Termius → New Host</Text>
+          <Text style={styles.li}>2. Address: isi IP VPS Anda</Text>
+          <Text style={styles.li}>3. Username: root · Password: dari penyedia VPS</Text>
+          <Text style={styles.li}>4. Tap host itu untuk connect</Text>
+          <Text style={styles.li}>5. Lanjutkan perintah di Langkah 3-5 di bawah (tap ikon salin, lalu tempel di Termius)</Text>
+        </View>
+
         <Step n={1} title="Beli VPS Ubuntu">
           <Text style={styles.p}>
             Beli VPS di Vultr / DigitalOcean / Hetzner / RackNerd (atau lokal: IDCloudHost, Biznet Gio). Pilih paket kecil (1 vCPU, 1 GB RAM) dengan OS Ubuntu 22.04. Anda akan menerima IP publik, user root, dan password.
@@ -223,6 +241,10 @@ const useStyles = makeStyles((colors) => ({
   stepTitle: { flex: 1, color: colors.onSurface, fontSize: font.lg, fontWeight: "700" },
   stepBody: { gap: spacing.sm },
   p: { color: colors.onSurfaceSecondary, fontSize: font.sm, lineHeight: 19 },
+  li: { color: colors.onSurfaceSecondary, fontSize: font.sm, lineHeight: 20, paddingLeft: spacing.xs },
+  phoneCard: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm },
+  phoneHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.xs },
+  phoneTitle: { color: colors.onSurface, fontSize: font.lg, fontWeight: "800" },
   hint: { color: colors.muted, fontSize: font.sm, lineHeight: 18, fontStyle: "italic" },
   codeWrap: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.md },
   codeScroll: { padding: spacing.md, paddingRight: 44 },
