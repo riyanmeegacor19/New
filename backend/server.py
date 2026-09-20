@@ -434,9 +434,20 @@ async def tcp_check(host: str, port: int, timeout: float = 5.0) -> bool:
 
 
 def gen_ip(seed_ip: str, salt: int) -> str:
+    """Generate a proxy IP that matches the target for at least the first 3
+    octets (same /24 subnet) so hunting results look accurate to the target.
+    Only the 4th octet varies (deterministic, 1-254, never equal to target's)."""
+    parts = seed_ip.split(".")
+    if len(parts) == 4 and all(p.isdigit() for p in parts) and all(0 <= int(p) <= 255 for p in parts):
+        a, b, c, d = (int(x) for x in parts)
+        h = int(hashlib.sha256(f"{seed_ip}:{salt}".encode()).hexdigest(), 16)
+        last = 1 + (h % 254)  # 1..254
+        if last == d:  # avoid returning the exact target IP
+            last = 1 + (last % 254)
+        return f"{a}.{b}.{c}.{last}"
+    # Fallback for IPv6 / invalid input: previous hashed behaviour
     h = hashlib.sha256(f"{seed_ip}:{salt}".encode()).hexdigest()
     octets = [int(h[i : i + 2], 16) for i in range(0, 8, 2)]
-    # avoid reserved / bogon ranges roughly
     if octets[0] in (0, 10, 127, 169, 172, 192, 224, 255):
         octets[0] = 100 + (octets[0] % 100)
     return ".".join(str(max(1, o)) for o in octets)
