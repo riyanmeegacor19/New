@@ -280,91 +280,28 @@ export default function BerandaScreen() {
         </View>
 
         {user.role === "admin" ? (
-          <Pressable testID="go-admin-card" onPress={() => router.push("/admin")} style={styles.linkCard}>
-            <Icon name="shield-crown" size={22} color={colors.brandPrimary} />
-            <View style={styles.flex1}>
-              <Text style={styles.linkTitle}>Panel Admin</Text>
-              <Text style={styles.linkSub}>Kelola pelanggan, pesanan & pengaturan</Text>
-            </View>
-            <Icon name="chevron-right" size={24} color={colors.muted} />
-          </Pressable>
+          <>
+            <SectionHeader title="Panel Kontrol" icon="shield-crown" />
+            <LinkCard testID="go-admin-card" icon="shield-crown" color={colors.brandPrimary} title="Panel Admin" sub="Kelola pelanggan, pesanan & pengaturan" onPress={() => router.push("/admin")} styles={styles} colors={colors} />
+          </>
         ) : (
           <>
-            <Pressable testID="go-proxy-card" onPress={() => router.push("/proxy")} style={styles.linkCard}>
-              <Icon name="shield-lock" size={22} color={colors.brandPrimary} />
-              <View style={styles.flex1}>
-                <Text style={styles.linkTitle}>Proxy Saya</Text>
-                <Text style={styles.linkSub}>Lihat kredensial & masa aktif proxy Anda</Text>
-              </View>
-              <Icon name="chevron-right" size={24} color={colors.muted} />
-            </Pressable>
-            <Pressable testID="go-beli-card" onPress={() => router.push("/beli")} style={styles.linkCard}>
-              <Icon name="cart-outline" size={22} color={colors.warning} />
-              <View style={styles.flex1}>
-                <Text style={styles.linkTitle}>Beli / Perpanjang Paket</Text>
-                <Text style={styles.linkSub}>Pilih paket & negara, bayar manual</Text>
-              </View>
-              <Icon name="chevron-right" size={24} color={colors.muted} />
-            </Pressable>
+            <SectionHeader title="Akun & Paket" icon="shield-lock" />
+            <LinkCard testID="go-proxy-card" icon="shield-lock" color={colors.brandPrimary} title="Proxy Saya" sub="Lihat kredensial & masa aktif proxy Anda" onPress={() => router.push("/proxy")} styles={styles} colors={colors} />
+            <LinkCard testID="go-beli-card" icon="cart-outline" color={colors.warning} title="Beli / Perpanjang Paket" sub="Pilih paket & negara, bayar manual" onPress={() => router.push("/beli")} styles={styles} colors={colors} />
+            <LinkCard testID="go-plans-card" icon="crown" color={colors.warning} title={t("link_plans")} sub={t("link_plans_sub")} onPress={() => router.push("/langganan")} styles={styles} colors={colors} />
+            <LinkCard testID="go-purchases-card" icon="receipt" color={colors.info} title={t("link_purchases")} sub={t("link_purchases_sub")} onPress={() => router.push("/pembelian")} styles={styles} colors={colors} />
           </>
         )}
 
-        <Pressable testID="go-servers-card" onPress={() => router.push("/servers")} style={styles.linkCard}>
-          <Icon name="server-network" size={22} color={colors.brandPrimary} />
-          <View style={styles.flex1}>
-            <Text style={styles.linkTitle}>{t("link_servers")}</Text>
-            <Text style={styles.linkSub}>{t("link_servers_sub")}</Text>
-          </View>
-          <Icon name="chevron-right" size={24} color={colors.muted} />
-        </Pressable>
-        <Pressable testID="go-gateway-card" onPress={() => router.push("/gateway")} style={styles.linkCard}>
-          <Icon name="transit-connection-variant" size={22} color={colors.brandPrimary} />
-          <View style={styles.flex1}>
-            <Text style={styles.linkTitle}>{t("link_gateway")}</Text>
-            <Text style={styles.linkSub}>{t("link_gateway_sub")}</Text>
-          </View>
-          <Icon name="chevron-right" size={24} color={colors.muted} />
-        </Pressable>
-        <Pressable testID="go-guide-card" onPress={() => router.push("/panduan")} style={styles.linkCard}>
-          <Icon name="book-open-variant" size={22} color={colors.warning} />
-          <View style={styles.flex1}>
-            <Text style={styles.linkTitle}>{t("link_guide")}</Text>
-            <Text style={styles.linkSub}>{t("link_guide_sub")}</Text>
-          </View>
-          <Icon name="chevron-right" size={24} color={colors.muted} />
-        </Pressable>
-        <Pressable testID="go-plans-card" onPress={() => router.push("/langganan")} style={styles.linkCard}>
-          <Icon name="crown" size={22} color={colors.warning} />
-          <View style={styles.flex1}>
-            <Text style={styles.linkTitle}>{t("link_plans")}</Text>
-            <Text style={styles.linkSub}>{t("link_plans_sub")}</Text>
-          </View>
-          <Icon name="chevron-right" size={24} color={colors.muted} />
-        </Pressable>
-        <Pressable testID="go-purchases-card" onPress={() => router.push("/pembelian")} style={styles.linkCard}>
-          <Icon name="receipt" size={22} color={colors.info} />
-          <View style={styles.flex1}>
-            <Text style={styles.linkTitle}>{t("link_purchases")}</Text>
-            <Text style={styles.linkSub}>{t("link_purchases_sub")}</Text>
-          </View>
-          <Icon name="chevron-right" size={24} color={colors.muted} />
-        </Pressable>
-        <Pressable testID="go-hunting-card" onPress={() => router.push("/hunting")} style={styles.linkCard}>
-          <Icon name="target" size={22} color={colors.brandPrimary} />
-          <View style={styles.flex1}>
-            <Text style={styles.linkTitle}>{t("link_hunting")}</Text>
-            <Text style={styles.linkSub}>{t("link_hunting_sub")}</Text>
-          </View>
-          <Icon name="chevron-right" size={24} color={colors.muted} />
-        </Pressable>
-        <Pressable testID="go-cekip-card" onPress={() => router.push("/cekip")} style={styles.linkCard}>
-          <Icon name="web" size={22} color={colors.info} />
-          <View style={styles.flex1}>
-            <Text style={styles.linkTitle}>{t("link_cekip")}</Text>
-            <Text style={styles.linkSub}>{t("link_cekip_sub")}</Text>
-          </View>
-          <Icon name="chevron-right" size={24} color={colors.muted} />
-        </Pressable>
+        <SectionHeader title="Alat Hunter" icon="target" />
+        <LinkCard testID="go-hunting-card" icon="target" color={colors.brandPrimary} title={t("link_hunting")} sub={t("link_hunting_sub")} onPress={() => router.push("/hunting")} styles={styles} colors={colors} />
+        <LinkCard testID="go-cekip-card" icon="web" color={colors.info} title={t("link_cekip")} sub={t("link_cekip_sub")} onPress={() => router.push("/cekip")} styles={styles} colors={colors} />
+        <LinkCard testID="go-servers-card" icon="server-network" color={colors.brandPrimary} title={t("link_servers")} sub={t("link_servers_sub")} onPress={() => router.push("/servers")} styles={styles} colors={colors} />
+        <LinkCard testID="go-gateway-card" icon="transit-connection-variant" color={colors.brandPrimary} title={t("link_gateway")} sub={t("link_gateway_sub")} onPress={() => router.push("/gateway")} styles={styles} colors={colors} />
+
+        <SectionHeader title="Info & Bantuan" icon="information-outline" />
+        <LinkCard testID="go-guide-card" icon="book-open-variant" color={colors.warning} title={t("link_guide")} sub={t("link_guide_sub")} onPress={() => router.push("/panduan")} styles={styles} colors={colors} />
       </ScrollView>
 
       <Modal visible={pwModal} transparent animationType="slide" onRequestClose={() => setPwModal(false)}>

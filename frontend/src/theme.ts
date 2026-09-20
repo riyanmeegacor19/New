@@ -106,3 +106,18 @@ export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48
 export const radius = { sm: 6, md: 12, lg: 20, pill: 999 };
 export const font = { sm: 12, base: 14, lg: 16, xl: 20, xxl: 24 };
 export const mono = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) as string;
+
+// Neon glow helper — gaming/HUD aesthetic. Uses boxShadow on web (avoids the
+// deprecated shadow* warning) and native shadow props on iOS/Android.
+export function glow(color: string, blur = 14, spread = 0) {
+  return Platform.select({
+    web: { boxShadow: `0 0 ${blur}px ${spread}px ${color}` },
+    default: {
+      shadowColor: color,
+      shadowOpacity: 0.9,
+      shadowRadius: blur,
+      shadowOffset: { width: 0, height: 0 },
+      elevation: Math.round(blur / 2),
+    },
+  }) as object;
+}
