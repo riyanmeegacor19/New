@@ -114,11 +114,6 @@ export default function LoginScreen() {
 
           <Text style={styles.encrypted}>{t("encrypted")}</Text>
         </View>
-
-        <View style={styles.demoHint}>
-          <Icon name="information-outline" size={16} color={colors.muted} />
-          <Text style={styles.demoText}>{t("demo_hint")}</Text>
-        </View>
       </KeyboardAwareScrollView>
     </View>
   );
@@ -213,11 +208,4 @@ const useStyles = makeStyles((colors) => ({
     letterSpacing: 2,
     marginTop: spacing.xl,
   },
-  demoHint: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    justifyContent: "center",
-  },
-  demoText: { color: colors.muted, fontSize: font.sm },
 }));
