@@ -279,6 +279,36 @@ export default function BerandaScreen() {
           </View>
         </View>
 
+        {user.role === "admin" ? (
+          <Pressable testID="go-admin-card" onPress={() => router.push("/admin")} style={styles.linkCard}>
+            <Icon name="shield-crown" size={22} color={colors.brandPrimary} />
+            <View style={styles.flex1}>
+              <Text style={styles.linkTitle}>Panel Admin</Text>
+              <Text style={styles.linkSub}>Kelola pelanggan, pesanan & pengaturan</Text>
+            </View>
+            <Icon name="chevron-right" size={24} color={colors.muted} />
+          </Pressable>
+        ) : (
+          <>
+            <Pressable testID="go-proxy-card" onPress={() => router.push("/proxy")} style={styles.linkCard}>
+              <Icon name="shield-lock" size={22} color={colors.brandPrimary} />
+              <View style={styles.flex1}>
+                <Text style={styles.linkTitle}>Proxy Saya</Text>
+                <Text style={styles.linkSub}>Lihat kredensial & masa aktif proxy Anda</Text>
+              </View>
+              <Icon name="chevron-right" size={24} color={colors.muted} />
+            </Pressable>
+            <Pressable testID="go-beli-card" onPress={() => router.push("/beli")} style={styles.linkCard}>
+              <Icon name="cart-outline" size={22} color={colors.warning} />
+              <View style={styles.flex1}>
+                <Text style={styles.linkTitle}>Beli / Perpanjang Paket</Text>
+                <Text style={styles.linkSub}>Pilih paket & negara, bayar manual</Text>
+              </View>
+              <Icon name="chevron-right" size={24} color={colors.muted} />
+            </Pressable>
+          </>
+        )}
+
         <Pressable testID="go-servers-card" onPress={() => router.push("/servers")} style={styles.linkCard}>
           <Icon name="server-network" size={22} color={colors.brandPrimary} />
           <View style={styles.flex1}>

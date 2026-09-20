@@ -34,5 +34,17 @@ User (Bahasa Indonesia) meminta aplikasi proxy bergaya "HN Proxy V1", lalu membe
 - **P2**: Integrasi server proxy nyata milik user (host/port/user/pass) bila user menyediakan.
 
 ## Next Tasks
-- Iterasi 6: Sambung Gateway (user set VPS gateway host/port/user/pass, TCP reachability check, dipakai di dialog Success), Impor Server (POST /api/proxies/import parse host:port per baris), Salin Kredensial di dialog Success.
-- Tunggu feedback user untuk fitur lanjutan (pembayaran nyata/QRIS, dsb.)
+- Iterasi 6: Sambung Gateway (done), Impor Server, Salin Kredensial.
+
+## Reseller Platform (2026-09-20) — FASE 1
+- Pivot: RIYANMEE PROXY jadi platform RESELLER proxy global (Bright Data upstream, Fase 2).
+- Admin = akun `idmee` (role admin, seeded idempoten). Customer = user register biasa.
+- Backend: role admin/customer; packages DB-driven (day7/30/90 + bandwidth_gb); orders flow
+  (pending -> admin confirm/reject) mengaktifkan pelanggan (expiry+country+quota+proxy creds);
+  admin CRUD customers & packages; settings (payment info BCA, proxy_host 155.138.227.248:1080,
+  countries, upstream Bright Data). Endpoints customer: /proxy-account, /payment-info, /countries,
+  /orders, /orders/mine. 27/27 backend tests pass.
+- Frontend: beranda menampilkan "Panel Admin" (admin) atau "Proxy Saya" + "Beli Paket" (customer).
+  Layar baru: app/proxy.tsx, app/beli.tsx, app/admin/{index,orders,customers,packages,settings}.tsx.
+  Pembayaran MANUAL (transfer BCA, konfirmasi admin). Verified render via screenshot (login->admin).
+- FASE 2 (belum): otomatisasi routing 3proxy VPS -> Bright Data per negara + provisioning user.

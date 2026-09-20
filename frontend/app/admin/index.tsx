@@ -1,0 +1,93 @@
+import Icon from "@react-native-vector-icons/material-design-icons";
+import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { api, AdminStatsT } from "@/src/api";
+import { font, makeStyles, radius, spacing, useTheme } from "@/src/theme";
+
+export default function AdminHome() {
+  const { colors } = useTheme();
+  const styles = useStyles();
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  const statsQ = useQuery({ queryKey: ["admin-stats"], queryFn: () => api<AdminStatsT>("/admin/stats"), refetchInterval: 15000 });
+  const s = statsQ.data;
+
+  return (
+    <View style={styles.screen}>
+      <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
+        <Pressable testID="admin-back-button" onPress={() => router.replace("/beranda")} style={styles.back} hitSlop={8}>
+          <Icon name="chevron-left" size={26} color={colors.onSurface} />
+        </Pressable>
+        <View style={styles.flex1}>
+          <Text style={styles.title}>Panel Admin</Text>
+          <Text style={styles.subtitle}>RIYANMEE PROXY Reseller</Text>
+        </View>
+        <Icon name="shield-crown" size={26} color={colors.brandPrimary} />
+      </View>
+
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} showsVerticalScrollIndicator={false}>
+        {statsQ.isLoading ? (
+          <ActivityIndicator size="large" color={colors.brandPrimary} style={{ marginTop: 30 }} />
+        ) : (
+          <View style={styles.statsGrid}>
+            <Stat label="Total Pelanggan" value={String(s?.total_customers ?? 0)} styles={styles} colors={colors} />
+            <Stat label="Pelanggan Aktif" value={String(s?.active_customers ?? 0)} styles={styles} colors={colors} accent />
+            <Stat label="Pesanan Pending" value={String(s?.pending_orders ?? 0)} styles={styles} colors={colors} warn={!!s?.pending_orders} />
+            <Stat label="Total Pendapatan" value={s?.revenue_label ?? "Rp 0"} styles={styles} colors={colors} accent />
+          </View>
+        )}
+
+        <NavCard icon="receipt-text" title="Pesanan" sub="Konfirmasi pembayaran pelanggan" badge={s?.pending_orders} onPress={() => router.push("/admin/orders")} styles={styles} colors={colors} />
+        <NavCard icon="account-group" title="Pelanggan" sub="Kelola akun, paket & kredensial" onPress={() => router.push("/admin/customers")} styles={styles} colors={colors} />
+        <NavCard icon="package-variant" title="Paket" sub="Atur harga, durasi & kuota" onPress={() => router.push("/admin/packages")} styles={styles} colors={colors} />
+        <NavCard icon="cog" title="Pengaturan" sub="Pembayaran, host proxy & upstream" onPress={() => router.push("/admin/settings")} styles={styles} colors={colors} />
+      </ScrollView>
+    </View>
+  );
+}
+
+function Stat({ label, value, styles, colors, accent, warn }: any) {
+  return (
+    <View style={styles.statCard}>
+      <Text style={[styles.statValue, accent ? { color: colors.brandPrimary } : warn ? { color: colors.warning } : null]}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function NavCard({ icon, title, sub, badge, onPress, styles, colors }: any) {
+  return (
+    <Pressable testID={`admin-nav-${title.toLowerCase()}`} onPress={onPress} style={styles.navCard}>
+      <Icon name={icon} size={24} color={colors.brandPrimary} />
+      <View style={styles.flex1}>
+        <Text style={styles.navTitle}>{title}</Text>
+        <Text style={styles.navSub}>{sub}</Text>
+      </View>
+      {badge ? <View style={styles.badge}><Text style={styles.badgeText}>{badge}</Text></View> : null}
+      <Icon name="chevron-right" size={24} color={colors.muted} />
+    </Pressable>
+  );
+}
+
+const useStyles = makeStyles((colors) => ({
+  screen: { flex: 1, backgroundColor: colors.surface },
+  header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
+  back: { width: 36, height: 44, alignItems: "flex-start", justifyContent: "center" },
+  flex1: { flex: 1 },
+  title: { color: colors.onSurface, fontSize: font.xl, fontWeight: "800", letterSpacing: 1 },
+  subtitle: { color: colors.muted, fontSize: font.sm, marginTop: 2 },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.md },
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
+  statCard: { flexBasis: "47%", flexGrow: 1, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.lg, padding: spacing.lg },
+  statValue: { color: colors.onSurface, fontSize: font.xxl, fontWeight: "800" },
+  statLabel: { color: colors.muted, fontSize: font.sm, marginTop: spacing.xs },
+  navCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.lg, padding: spacing.lg },
+  navTitle: { color: colors.onSurface, fontSize: font.lg, fontWeight: "700" },
+  navSub: { color: colors.onSurfaceTertiary, fontSize: font.sm, marginTop: 2 },
+  badge: { minWidth: 24, height: 24, borderRadius: 12, backgroundColor: colors.warning, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
+  badgeText: { color: colors.onWarning, fontSize: font.sm, fontWeight: "800" },
+}));

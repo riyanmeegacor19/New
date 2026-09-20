@@ -83,7 +83,14 @@ class BaseDocument(BaseModel):
 class UserDoc(BaseDocument):
     username: str
     password_hash: str
+    role: str = "customer"  # admin | customer
     tier: str = "PREMIUM MEMBER"
+    status: str = "active"  # active | suspended | pending
+    country: str = ""  # assigned exit country code (reseller)
+    package_id: str = ""
+    package_name: str = ""
+    bandwidth_limit_mb: int = 0  # 0 = unlimited / not set
+    bandwidth_used_mb: int = 0
     server_host: str = "server.riyanmee.web.id"
     server_port: int = 5245
     proxy_password: str = ""
@@ -177,6 +184,111 @@ class ImportIn(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Reseller: packages, orders, settings
+# ---------------------------------------------------------------------------
+DEFAULT_COUNTRIES = [
+    {"code": "US", "name": "Amerika Serikat"},
+    {"code": "GB", "name": "Inggris"},
+    {"code": "ID", "name": "Indonesia"},
+    {"code": "SG", "name": "Singapura"},
+    {"code": "JP", "name": "Jepang"},
+    {"code": "DE", "name": "Jerman"},
+    {"code": "FR", "name": "Prancis"},
+    {"code": "CA", "name": "Kanada"},
+    {"code": "AU", "name": "Australia"},
+    {"code": "NL", "name": "Belanda"},
+]
+
+DEFAULT_PACKAGES = [
+    {"id": "day7", "name": "Paket 7 Hari", "days": 7, "price": 50000, "price_label": "Rp 50.000",
+     "bandwidth_gb": 10, "tier": "RESELLER", "popular": False, "active": True,
+     "features": ["Residential Global", "10 GB kuota", "Pilih negara", "1 IP proxy"]},
+    {"id": "day30", "name": "Paket 30 Hari", "days": 30, "price": 150000, "price_label": "Rp 150.000",
+     "bandwidth_gb": 50, "tier": "RESELLER", "popular": True, "active": True,
+     "features": ["Residential Global", "50 GB kuota", "Pilih negara", "Prioritas server"]},
+    {"id": "day90", "name": "Paket 90 Hari", "days": 90, "price": 400000, "price_label": "Rp 400.000",
+     "bandwidth_gb": 200, "tier": "RESELLER", "popular": False, "active": True,
+     "features": ["Residential Global", "200 GB kuota", "Pilih negara", "Dukungan prioritas"]},
+]
+
+DEFAULT_SETTINGS = {
+    "payment_info": {
+        "bank_name": "BCA",
+        "account_number": "1462261696",
+        "account_holder": "I KADEK RISPO SUGIANTARA",
+        "ewallet": "",
+        "qris_note": "Transfer sesuai nominal paket, lalu tekan 'Saya Sudah Bayar'. Konfirmasi manual 1x24 jam.",
+    },
+    "proxy_host": "155.138.227.248",
+    "proxy_port": 1080,
+    "proxy_protocol": "socks5",
+    "upstream": {
+        "provider": "brightdata",
+        "host": "brd.superproxy.io",
+        "port": 22225,
+        "zone": "residential",
+        "username": "",
+        "password": "",
+    },
+    "countries": DEFAULT_COUNTRIES,
+}
+
+
+class PackageDoc(BaseModel):
+    id: str
+    name: str
+    days: int
+    price: int
+    price_label: str
+    bandwidth_gb: int = 0
+    tier: str = "RESELLER"
+    popular: bool = False
+    active: bool = True
+    features: List[str] = Field(default_factory=list)
+
+
+class OrderCreateIn(BaseModel):
+    package_id: str
+    country: str = ""
+
+
+class CustomerCreateIn(BaseModel):
+    username: str = Field(min_length=3, max_length=32)
+    password: str = Field(min_length=6, max_length=128)
+    country: str = ""
+    package_id: str = ""
+
+
+class CustomerUpdateIn(BaseModel):
+    country: Optional[str] = None
+    status: Optional[str] = None
+    add_days: Optional[int] = None
+    bandwidth_limit_mb: Optional[int] = None
+    bandwidth_used_mb: Optional[int] = None
+    new_password: Optional[str] = None
+    regenerate_proxy_password: Optional[bool] = None
+    package_id: Optional[str] = None
+
+
+class PaymentInfoIn(BaseModel):
+    bank_name: str = ""
+    account_number: str = ""
+    account_holder: str = ""
+    ewallet: str = ""
+    qris_note: str = ""
+
+
+class SettingsUpdateIn(BaseModel):
+    payment_info: Optional[PaymentInfoIn] = None
+    proxy_host: Optional[str] = None
+    proxy_port: Optional[int] = None
+    proxy_protocol: Optional[str] = None
+    countries: Optional[List[dict]] = None
+    upstream: Optional[dict] = None
+
+
+
+# ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
 def hash_password(raw: str) -> str:
@@ -218,11 +330,42 @@ async def current_user(
     return UserDoc.from_mongo(doc)
 
 
+async def require_admin(user: Annotated[UserDoc, Depends(current_user)]) -> UserDoc:
+    if getattr(user, "role", "customer") != "admin":
+        raise HTTPException(status_code=403, detail="Akses khusus admin")
+    return user
+
+
+async def get_settings_doc() -> dict:
+    doc = await db.settings.find_one({"_id": "app"})
+    if not doc:
+        doc = {"_id": "app", **DEFAULT_SETTINGS}
+        await db.settings.insert_one(doc)
+    # backfill any missing top-level keys
+    changed = False
+    for k, v in DEFAULT_SETTINGS.items():
+        if k not in doc:
+            doc[k] = v
+            changed = True
+    if changed:
+        await db.settings.update_one({"_id": "app"}, {"$set": {k: doc[k] for k in DEFAULT_SETTINGS}})
+    doc.pop("_id", None)
+    return doc
+
+
+
 def public_user(user: UserDoc) -> dict:
     return {
         "id": str(user.id),
         "username": user.username,
+        "role": getattr(user, "role", "customer"),
         "tier": user.tier,
+        "status": getattr(user, "status", "active"),
+        "country": getattr(user, "country", ""),
+        "package_id": getattr(user, "package_id", ""),
+        "package_name": getattr(user, "package_name", ""),
+        "bandwidth_limit_mb": getattr(user, "bandwidth_limit_mb", 0),
+        "bandwidth_used_mb": getattr(user, "bandwidth_used_mb", 0),
         "server_host": user.server_host,
         "server_port": user.server_port,
         "proxy_password": user.proxy_password,
@@ -336,23 +479,41 @@ async def seed_demo() -> None:
     username = normalize_username(DEMO_USERNAME)
     existing = await db.users.find_one({"username": username})
     if existing:
+        # Ensure the demo account is the admin/reseller owner.
+        await db.users.update_one(
+            {"username": username},
+            {"$set": {"role": "admin", "status": "active", "tier": "ADMIN"}},
+        )
         return
     user = UserDoc(
         username=username,
         password_hash=hash_password(DEMO_PASSWORD),
+        role="admin",
+        tier="ADMIN",
         proxy_password="rmx-" + hashlib.md5(username.encode()).hexdigest()[:10],
         whitelist_ips=["59.153.131.72"],
         traffic_bytes=1024 * 1024 * 357,
-        expires_at=utcnow() + timedelta(days=30, hours=12, minutes=55),
+        expires_at=utcnow() + timedelta(days=3650),
     )
     await db.users.insert_one(user.to_mongo())
-    logger.info("Demo user '%s' seeded", username)
+    logger.info("Admin user '%s' seeded", username)
+
+
+async def seed_packages() -> None:
+    for pkg in DEFAULT_PACKAGES:
+        existing = await db.packages.find_one({"id": pkg["id"]})
+        if not existing:
+            await db.packages.insert_one(dict(pkg))
+    logger.info("Packages ensured")
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await db.users.create_index("username", unique=True)
+    await db.packages.create_index("id", unique=True)
     await seed_demo()
+    await seed_packages()
+    await get_settings_doc()
     yield
     client.close()
 
@@ -714,12 +875,27 @@ async def clear_gateway(user: Annotated[UserDoc, Depends(current_user)]):
 # ---------------------------------------------------------------------------
 @api_router.get("/plans")
 async def get_plans():
-    return PLANS
+    docs = await db.packages.find({"active": True}).to_list(100)
+    docs.sort(key=lambda d: d.get("days", 0))
+    return [
+        {
+            "id": d.get("id"),
+            "name": d.get("name"),
+            "days": d.get("days", 0),
+            "price": d.get("price", 0),
+            "price_label": d.get("price_label", ""),
+            "bandwidth_gb": d.get("bandwidth_gb", 0),
+            "tier": d.get("tier", "RESELLER"),
+            "popular": d.get("popular", False),
+            "features": d.get("features", []),
+        }
+        for d in docs
+    ]
 
 
 @api_router.post("/subscription/activate")
 async def activate_subscription(body: ActivateIn, user: Annotated[UserDoc, Depends(current_user)]):
-    plan = next((p for p in PLANS if p["id"] == body.plan_id), None)
+    plan = await db.packages.find_one({"id": body.plan_id, "active": True})
     if not plan:
         raise HTTPException(status_code=404, detail="Paket tidak ditemukan")
     now = utcnow()
@@ -772,6 +948,379 @@ async def get_purchases(user: Annotated[UserDoc, Depends(current_user)]):
         }
         for d in docs
     ]
+
+
+# ---------------------------------------------------------------------------
+# Reseller helpers
+# ---------------------------------------------------------------------------
+def _iso(v):
+    return v.isoformat() if isinstance(v, datetime) else v
+
+
+def order_out(d: dict) -> dict:
+    return {
+        "id": str(d["_id"]),
+        "user_id": d.get("user_id", ""),
+        "username": d.get("username", ""),
+        "package_id": d.get("package_id", ""),
+        "package_name": d.get("package_name", ""),
+        "days": d.get("days", 0),
+        "price": d.get("price", 0),
+        "price_label": d.get("price_label", ""),
+        "country": d.get("country", ""),
+        "status": d.get("status", "pending"),
+        "created_at": _iso(d.get("created_at")),
+        "confirmed_at": _iso(d.get("confirmed_at")),
+    }
+
+
+def customer_out(u: dict) -> dict:
+    return public_user(UserDoc.from_mongo(u))
+
+
+def ensure_proxy_password(username: str, existing: str = "") -> str:
+    if existing:
+        return existing
+    return "rmx-" + hashlib.md5(f"{username}{random.random()}".encode()).hexdigest()[:10]
+
+
+# ---------------------------------------------------------------------------
+# Customer: payment info, countries, proxy account, orders
+# ---------------------------------------------------------------------------
+@api_router.get("/payment-info")
+async def payment_info(user: Annotated[UserDoc, Depends(current_user)]):
+    s = await get_settings_doc()
+    return {
+        "payment_info": s.get("payment_info", {}),
+    }
+
+
+@api_router.get("/countries")
+async def list_countries(user: Annotated[UserDoc, Depends(current_user)]):
+    s = await get_settings_doc()
+    return s.get("countries", DEFAULT_COUNTRIES)
+
+
+@api_router.get("/proxy-account")
+async def proxy_account(user: Annotated[UserDoc, Depends(current_user)]):
+    s = await get_settings_doc()
+    now = utcnow()
+    exp = user.expires_at
+    if exp and exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    active = getattr(user, "status", "active") == "active" and bool(exp and exp > now) and bool(user.package_id)
+    return {
+        "configured": bool(user.package_id),
+        "active": active,
+        "status": getattr(user, "status", "active"),
+        "host": s.get("proxy_host", ""),
+        "port": s.get("proxy_port", 0),
+        "protocol": s.get("proxy_protocol", "socks5"),
+        "username": user.username,
+        "password": user.proxy_password,
+        "country": getattr(user, "country", ""),
+        "package_id": user.package_id,
+        "package_name": user.package_name,
+        "bandwidth_limit_mb": getattr(user, "bandwidth_limit_mb", 0),
+        "bandwidth_used_mb": getattr(user, "bandwidth_used_mb", 0),
+        "expires_at": _iso(user.expires_at),
+    }
+
+
+@api_router.post("/orders", status_code=201)
+async def create_order(body: OrderCreateIn, user: Annotated[UserDoc, Depends(current_user)]):
+    pkg = await db.packages.find_one({"id": body.package_id, "active": True})
+    if not pkg:
+        raise HTTPException(status_code=404, detail="Paket tidak ditemukan")
+    existing = await db.orders.find_one({"user_id": str(user.id), "status": "pending"})
+    if existing:
+        raise HTTPException(status_code=409, detail="Masih ada pesanan menunggu konfirmasi")
+    doc = {
+        "user_id": str(user.id),
+        "username": user.username,
+        "package_id": pkg["id"],
+        "package_name": pkg["name"],
+        "days": pkg.get("days", 0),
+        "price": pkg.get("price", 0),
+        "price_label": pkg.get("price_label", ""),
+        "country": body.country.strip().upper(),
+        "status": "pending",
+        "created_at": utcnow(),
+        "confirmed_at": None,
+    }
+    result = await db.orders.insert_one(doc)
+    fresh = await db.orders.find_one({"_id": result.inserted_id})
+    return order_out(fresh)
+
+
+@api_router.get("/orders/mine")
+async def my_orders(user: Annotated[UserDoc, Depends(current_user)]):
+    docs = await db.orders.find({"user_id": str(user.id)}).sort("created_at", -1).limit(50).to_list(50)
+    return [order_out(d) for d in docs]
+
+
+# ---------------------------------------------------------------------------
+# Admin: stats, customers, orders, packages, settings
+# ---------------------------------------------------------------------------
+@api_router.get("/admin/stats")
+async def admin_stats(admin: Annotated[UserDoc, Depends(require_admin)]):
+    total_customers = await db.users.count_documents({"role": "customer", "deleted_at": None})
+    active_customers = await db.users.count_documents({"role": "customer", "deleted_at": None, "status": "active"})
+    pending_orders = await db.orders.count_documents({"status": "pending"})
+    confirmed = await db.orders.find({"status": "confirmed"}).to_list(1000)
+    revenue = sum(o.get("price", 0) for o in confirmed)
+    return {
+        "total_customers": total_customers,
+        "active_customers": active_customers,
+        "pending_orders": pending_orders,
+        "confirmed_orders": len(confirmed),
+        "revenue": revenue,
+        "revenue_label": f"Rp {revenue:,.0f}".replace(",", "."),
+    }
+
+
+@api_router.get("/admin/customers")
+async def admin_list_customers(admin: Annotated[UserDoc, Depends(require_admin)]):
+    docs = await db.users.find({"role": "customer", "deleted_at": None}).sort("created_at", -1).to_list(500)
+    return [customer_out(d) for d in docs]
+
+
+@api_router.post("/admin/customers", status_code=201)
+async def admin_create_customer(body: CustomerCreateIn, admin: Annotated[UserDoc, Depends(require_admin)]):
+    username = normalize_username(body.username)
+    if await db.users.find_one({"username": username}):
+        raise HTTPException(status_code=409, detail="Username sudah dipakai")
+    pkg = None
+    if body.package_id:
+        pkg = await db.packages.find_one({"id": body.package_id, "active": True})
+    now = utcnow()
+    expires = now + timedelta(days=pkg["days"]) if pkg else now
+    user = UserDoc(
+        username=username,
+        password_hash=hash_password(body.password),
+        role="customer",
+        tier=pkg["tier"] if pkg else "FREE MEMBER",
+        status="active" if pkg else "pending",
+        country=body.country.strip().upper(),
+        package_id=pkg["id"] if pkg else "",
+        package_name=pkg["name"] if pkg else "",
+        bandwidth_limit_mb=(pkg.get("bandwidth_gb", 0) * 1024) if pkg else 0,
+        proxy_password=ensure_proxy_password(username),
+        expires_at=expires,
+    )
+    await db.users.insert_one(user.to_mongo())
+    fresh = await db.users.find_one({"username": username})
+    return customer_out(fresh)
+
+
+@api_router.patch("/admin/customers/{customer_id}")
+async def admin_update_customer(customer_id: str, body: CustomerUpdateIn, admin: Annotated[UserDoc, Depends(require_admin)]):
+    try:
+        oid = ObjectId(customer_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=404, detail="Pelanggan tidak ditemukan")
+    doc = await db.users.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Pelanggan tidak ditemukan")
+    updates: dict = {}
+    if body.country is not None:
+        updates["country"] = body.country.strip().upper()
+    if body.status is not None:
+        if body.status not in ("active", "suspended", "pending"):
+            raise HTTPException(status_code=400, detail="Status tidak valid")
+        updates["status"] = body.status
+    if body.bandwidth_limit_mb is not None:
+        updates["bandwidth_limit_mb"] = max(0, body.bandwidth_limit_mb)
+    if body.bandwidth_used_mb is not None:
+        updates["bandwidth_used_mb"] = max(0, body.bandwidth_used_mb)
+    if body.new_password:
+        if len(body.new_password) < 6:
+            raise HTTPException(status_code=400, detail="Password minimal 6 karakter")
+        updates["password_hash"] = hash_password(body.new_password)
+    if body.regenerate_proxy_password:
+        updates["proxy_password"] = ensure_proxy_password(doc["username"])
+    if body.package_id is not None and body.package_id:
+        pkg = await db.packages.find_one({"id": body.package_id, "active": True})
+        if not pkg:
+            raise HTTPException(status_code=404, detail="Paket tidak ditemukan")
+        updates["package_id"] = pkg["id"]
+        updates["package_name"] = pkg["name"]
+        updates["tier"] = pkg["tier"]
+        updates["bandwidth_limit_mb"] = pkg.get("bandwidth_gb", 0) * 1024
+    if body.add_days:
+        current = doc.get("expires_at")
+        if isinstance(current, datetime) and current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        now = utcnow()
+        base = current if isinstance(current, datetime) and current > now else now
+        updates["expires_at"] = base + timedelta(days=body.add_days)
+    if not updates:
+        raise HTTPException(status_code=400, detail="Tidak ada perubahan")
+    await db.users.update_one({"_id": oid}, {"$set": updates})
+    fresh = await db.users.find_one({"_id": oid})
+    return customer_out(fresh)
+
+
+@api_router.delete("/admin/customers/{customer_id}")
+async def admin_delete_customer(customer_id: str, admin: Annotated[UserDoc, Depends(require_admin)]):
+    try:
+        oid = ObjectId(customer_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=404, detail="Pelanggan tidak ditemukan")
+    result = await db.users.update_one({"_id": oid, "role": "customer"}, {"$set": {"deleted_at": utcnow(), "status": "suspended"}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Pelanggan tidak ditemukan")
+    return {"ok": True}
+
+
+@api_router.get("/admin/orders")
+async def admin_list_orders(admin: Annotated[UserDoc, Depends(require_admin)], status: Optional[str] = None):
+    query: dict = {}
+    if status in ("pending", "confirmed", "rejected"):
+        query["status"] = status
+    docs = await db.orders.find(query).sort("created_at", -1).limit(200).to_list(200)
+    return [order_out(d) for d in docs]
+
+
+@api_router.post("/admin/orders/{order_id}/confirm")
+async def admin_confirm_order(order_id: str, admin: Annotated[UserDoc, Depends(require_admin)]):
+    try:
+        oid = ObjectId(order_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=404, detail="Pesanan tidak ditemukan")
+    order = await db.orders.find_one({"_id": oid})
+    if not order:
+        raise HTTPException(status_code=404, detail="Pesanan tidak ditemukan")
+    if order.get("status") == "confirmed":
+        raise HTTPException(status_code=409, detail="Pesanan sudah dikonfirmasi")
+    pkg = await db.packages.find_one({"id": order["package_id"]})
+    days = order.get("days", 0) or (pkg.get("days", 30) if pkg else 30)
+    bw_mb = (pkg.get("bandwidth_gb", 0) * 1024) if pkg else 0
+    tier = pkg.get("tier", "RESELLER") if pkg else "RESELLER"
+    try:
+        cust_oid = ObjectId(order["user_id"])
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=404, detail="Pelanggan tidak ditemukan")
+    cust = await db.users.find_one({"_id": cust_oid})
+    if not cust:
+        raise HTTPException(status_code=404, detail="Pelanggan tidak ditemukan")
+    now = utcnow()
+    current = cust.get("expires_at")
+    if isinstance(current, datetime) and current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    base = current if isinstance(current, datetime) and current > now else now
+    new_expiry = base + timedelta(days=days)
+    await db.users.update_one(
+        {"_id": cust_oid},
+        {"$set": {
+            "expires_at": new_expiry,
+            "tier": tier,
+            "status": "active",
+            "country": order.get("country", "") or cust.get("country", ""),
+            "package_id": order.get("package_id", ""),
+            "package_name": order.get("package_name", ""),
+            "bandwidth_limit_mb": bw_mb,
+            "bandwidth_used_mb": 0,
+            "proxy_password": ensure_proxy_password(cust["username"], cust.get("proxy_password", "")),
+        }},
+    )
+    await db.orders.update_one({"_id": oid}, {"$set": {"status": "confirmed", "confirmed_at": now}})
+    await db.purchases.insert_one({
+        "user_id": order["user_id"],
+        "plan_id": order.get("package_id", ""),
+        "plan_name": order.get("package_name", ""),
+        "days": days,
+        "price": order.get("price", 0),
+        "price_label": order.get("price_label", ""),
+        "expires_at": new_expiry,
+        "ts": now,
+    })
+    await db.history.insert_one(HistoryDoc(
+        user_id=order["user_id"],
+        kind="connect",
+        title=f"Paket aktif · {order.get('package_name','')}",
+        subtitle=f"+{days} hari · {order.get('price_label','')}",
+    ).to_mongo())
+    fresh = await db.orders.find_one({"_id": oid})
+    return order_out(fresh)
+
+
+@api_router.post("/admin/orders/{order_id}/reject")
+async def admin_reject_order(order_id: str, admin: Annotated[UserDoc, Depends(require_admin)]):
+    try:
+        oid = ObjectId(order_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=404, detail="Pesanan tidak ditemukan")
+    result = await db.orders.update_one({"_id": oid}, {"$set": {"status": "rejected"}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Pesanan tidak ditemukan")
+    fresh = await db.orders.find_one({"_id": oid})
+    return order_out(fresh)
+
+
+@api_router.get("/admin/packages")
+async def admin_list_packages(admin: Annotated[UserDoc, Depends(require_admin)]):
+    docs = await db.packages.find({}).to_list(100)
+    docs.sort(key=lambda d: d.get("days", 0))
+    return [{k: v for k, v in d.items() if k != "_id"} for d in docs]
+
+
+@api_router.post("/admin/packages", status_code=201)
+async def admin_create_package(body: PackageDoc, admin: Annotated[UserDoc, Depends(require_admin)]):
+    pid = body.id.strip()
+    if not pid:
+        raise HTTPException(status_code=400, detail="ID paket wajib diisi")
+    if await db.packages.find_one({"id": pid}):
+        raise HTTPException(status_code=409, detail="ID paket sudah ada")
+    data = body.model_dump()
+    data["id"] = pid
+    await db.packages.insert_one(data)
+    return {k: v for k, v in data.items() if k != "_id"}
+
+
+@api_router.patch("/admin/packages/{package_id}")
+async def admin_update_package(package_id: str, body: PackageDoc, admin: Annotated[UserDoc, Depends(require_admin)]):
+    existing = await db.packages.find_one({"id": package_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Paket tidak ditemukan")
+    data = body.model_dump()
+    data["id"] = package_id
+    await db.packages.update_one({"id": package_id}, {"$set": data})
+    fresh = await db.packages.find_one({"id": package_id})
+    return {k: v for k, v in fresh.items() if k != "_id"}
+
+
+@api_router.delete("/admin/packages/{package_id}")
+async def admin_delete_package(package_id: str, admin: Annotated[UserDoc, Depends(require_admin)]):
+    result = await db.packages.delete_one({"id": package_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Paket tidak ditemukan")
+    return {"ok": True}
+
+
+@api_router.get("/admin/settings")
+async def admin_get_settings(admin: Annotated[UserDoc, Depends(require_admin)]):
+    return await get_settings_doc()
+
+
+@api_router.put("/admin/settings")
+async def admin_update_settings(body: SettingsUpdateIn, admin: Annotated[UserDoc, Depends(require_admin)]):
+    updates: dict = {}
+    if body.payment_info is not None:
+        updates["payment_info"] = body.payment_info.model_dump()
+    if body.proxy_host is not None:
+        updates["proxy_host"] = body.proxy_host.strip()
+    if body.proxy_port is not None:
+        updates["proxy_port"] = body.proxy_port
+    if body.proxy_protocol is not None:
+        updates["proxy_protocol"] = body.proxy_protocol.strip()
+    if body.countries is not None:
+        updates["countries"] = body.countries
+    if body.upstream is not None:
+        updates["upstream"] = body.upstream
+    if updates:
+        await db.settings.update_one({"_id": "app"}, {"$set": updates}, upsert=True)
+    return await get_settings_doc()
 
 
 app.include_router(api_router)

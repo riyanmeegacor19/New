@@ -33,6 +33,9 @@ export default function RootLayout() {
                   <Stack.Screen name="pembelian" />
                   <Stack.Screen name="gateway" />
                   <Stack.Screen name="panduan" />
+                  <Stack.Screen name="proxy" />
+                  <Stack.Screen name="beli" />
+                  <Stack.Screen name="admin" />
                 </Stack>
               </AuthProvider>
             </ToastProvider>

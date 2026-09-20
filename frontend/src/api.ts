@@ -8,6 +8,13 @@ export type HuntMode = "ultimate" | "full" | "city" | "isp";
 export type UserT = {
   id: string;
   username: string;
+  role: "admin" | "customer";
+  status: string;
+  country: string;
+  package_id: string;
+  package_name: string;
+  bandwidth_limit_mb: number;
+  bandwidth_used_mb: number;
   tier: string;
   server_host: string;
   server_port: number;
@@ -117,6 +124,80 @@ export type HistoryT = {
 };
 
 export class ApiError extends Error {}
+
+export type OrderT = {
+  id: string;
+  user_id: string;
+  username: string;
+  package_id: string;
+  package_name: string;
+  days: number;
+  price: number;
+  price_label: string;
+  country: string;
+  status: "pending" | "confirmed" | "rejected";
+  created_at: string | null;
+  confirmed_at: string | null;
+};
+
+export type ProxyAccountT = {
+  configured: boolean;
+  active: boolean;
+  status: string;
+  host: string;
+  port: number;
+  protocol: string;
+  username: string;
+  password: string;
+  country: string;
+  package_id: string;
+  package_name: string;
+  bandwidth_limit_mb: number;
+  bandwidth_used_mb: number;
+  expires_at: string | null;
+};
+
+export type CountryT = { code: string; name: string };
+
+export type PaymentInfoT = {
+  bank_name: string;
+  account_number: string;
+  account_holder: string;
+  ewallet: string;
+  qris_note: string;
+};
+
+export type AdminStatsT = {
+  total_customers: number;
+  active_customers: number;
+  pending_orders: number;
+  confirmed_orders: number;
+  revenue: number;
+  revenue_label: string;
+};
+
+export type UpstreamT = {
+  provider: string;
+  host: string;
+  port: number;
+  zone: string;
+  username: string;
+  password: string;
+};
+
+export type SettingsT = {
+  payment_info: PaymentInfoT;
+  proxy_host: string;
+  proxy_port: number;
+  proxy_protocol: string;
+  upstream: UpstreamT;
+  countries: CountryT[];
+};
+
+export function countryName(code: string, list: CountryT[]): string {
+  const found = list.find((c) => c.code === code);
+  return found ? found.name : code || "-";
+}
 
 export async function api<T>(
   path: string,

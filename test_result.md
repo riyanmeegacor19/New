@@ -101,3 +101,163 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: >
+  User (Bahasa Indonesia) ingin mengubah RIYANMEE PROXY menjadi platform RESELLER proxy global.
+  Fase 1: Panel Reseller. Admin = akun 'idmee'. Model jual per paket (7/30/90 hari), pembayaran
+  MANUAL (transfer BCA, konfirmasi admin). Provider upstream nanti Bright Data (Fase 2 routing).
+  Backend baru menambahkan: role admin/customer, manajemen pelanggan, paket DB-driven, pesanan
+  (order) dengan konfirmasi manual, pengaturan (payment info + proxy host + countries + upstream),
+  dan endpoint proxy-account untuk pelanggan.
+
+backend:
+  - task: "Admin role + seed idmee as admin"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "UserDoc extended with role/status/country/package/bandwidth. seed_demo now sets idmee role=admin idempotently. public_user exposes new fields. require_admin dependency added. Manual curl verified idmee logs in as role=admin."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Admin login with idmee/riyanmee123 returns role=admin. Customer registration returns role=customer. require_admin protection working: returns 403 for customer token, 401 for no token. All auth/role functionality verified working correctly."
+
+  - task: "Packages DB-driven (GET /api/plans) + admin packages CRUD"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Packages seeded into db.packages (day7/day30/day90 with bandwidth_gb). GET /api/plans reads active packages. Admin CRUD: GET/POST/PATCH/DELETE /api/admin/packages (admin only)."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. GET /api/plans returns day7/day30/day90 with all required fields (bandwidth_gb, price, features). Admin CRUD fully functional: created test package, updated price, deleted package. Non-admin correctly blocked with 403. All packages functionality verified working."
+
+  - task: "Customer orders flow (create/list/mine) + manual confirm/reject"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "POST /api/orders (customer, pending; blocks duplicate pending). GET /api/orders/mine. Admin: GET /api/admin/orders?status=, POST /api/admin/orders/{id}/confirm (extends expiry, sets country/package/quota, ensures proxy_password, logs purchase+history), POST /api/admin/orders/{id}/reject. Manual curl verified full flow + stats/revenue update."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Complete order flow verified: (1) Customer creates order with status=pending, country=ID. (2) Duplicate pending order correctly blocked with 409. (3) GET /api/orders/mine shows pending order. (4) Admin GET /api/admin/orders?status=pending shows order. (5) Admin confirm order sets status=confirmed. (6) After confirm, GET /api/proxy-account returns active=true, package_id=day7, country=ID, host=155.138.227.248, port=1080, password present, bandwidth_limit_mb=10240, expires_at in future. (7) Admin reject order sets status=rejected. (8) GET /api/admin/stats shows total_customers>=1, confirmed_orders>=1, revenue>0. All order flow functionality working perfectly."
+
+  - task: "Admin customers management (list/create/update/delete)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "GET/POST/PATCH/DELETE /api/admin/customers. Create can assign package (sets expiry+quota+active). PATCH supports country/status/add_days/bandwidth/new_password/regenerate_proxy_password/package_id. DELETE soft-deletes. All require admin."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Admin customer management fully functional: (1) POST /api/admin/customers with package_id=day30 creates customer with status=active, bandwidth_limit_mb=51200 (50GB), proxy_password present, country=US. (2) GET /api/admin/customers includes created customer. (3) PATCH /api/admin/customers successfully updates status to suspended, adds 30 days, regenerates proxy_password. (4) DELETE /api/admin/customers soft-deletes customer (ok:true), customer no longer in GET list. All CRUD operations verified working."
+
+  - task: "Settings (payment info, proxy host, countries, upstream) + proxy-account + payment-info + countries"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "GET/PUT /api/admin/settings (admin). Defaults seeded incl BCA payment info + proxy_host 155.138.227.248:1080. Customer: GET /api/payment-info, GET /api/countries, GET /api/proxy-account (returns creds+country+expiry+quota+active). require_admin returns 403 for non-admin."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Settings management fully functional: (1) GET /api/admin/settings returns payment_info (BCA/1462261696/I KADEK RISPO SUGIANTARA), proxy_host=155.138.227.248, proxy_port=1080, countries list, upstream config. (2) PUT /api/admin/settings successfully updates payment_info to Mandiri, persists changes verified by GET. Restored to BCA successfully. (3) GET /api/payment-info (customer token) returns payment_info. (4) GET /api/countries (customer token) returns countries list including ID/US. All settings endpoints verified working."
+
+  - task: "Existing endpoints regression (auth/gateway/hunt/ip-info/proxies/history)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Existing endpoints unchanged except /plans and /subscription/activate now read packages from DB. Verify no regression."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. All existing endpoints verified working with no regression: (1) POST /api/subscription/activate with plan_id=day30 returns updated user (reads packages from DB). (2) GET /api/auth/me returns user data. (3) GET /api/profile returns user profile. (4) POST /api/tools/ip-info with ip=8.8.8.8 returns geo data. (5) POST /api/hunt with target_ip=8.8.8.8 mode=ultimate returns proxy results. (6) GET /api/gateway returns gateway config. All regression tests passed."
+
+frontend:
+  - task: "Reseller frontend (admin panel + customer proxy/buy screens)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Built. beranda role-based entry cards. New screens: app/proxy.tsx (customer proxy creds+quota), app/beli.tsx (pick package+country, manual payment info, order+history), app/admin/{_layout,index,orders,customers,packages,settings}.tsx. admin/_layout guards role=admin. Lint clean. Verified via screenshot: login idmee -> beranda -> Panel Admin renders with nav cards. NOT yet run through automated frontend test (awaiting user permission)."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 2
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Admin role + seed idmee as admin"
+    - "Packages DB-driven (GET /api/plans) + admin packages CRUD"
+    - "Customer orders flow (create/list/mine) + manual confirm/reject"
+    - "Admin customers management (list/create/update/delete)"
+    - "Settings (payment info, proxy host, countries, upstream) + proxy-account + payment-info + countries"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    -agent: "main"
+    -message: >
+      Fase 1 backend reseller selesai. Tolong test SEMUA endpoint reseller baru dengan admin
+      idmee/riyanmee123 (role admin) dan seorang customer yang di-register lewat /api/auth/register.
+      Fokus: (1) require_admin harus 403 untuk non-admin, (2) alur order pending->confirm mengaktifkan
+      pelanggan (expiry bertambah, country/package/quota terisi, proxy_password ada) dan proxy-account
+      mengembalikan active=true, (3) blokir duplicate pending order (409), (4) packages CRUD & settings
+      PUT persist, (5) regression /api/plans, /api/subscription/activate, auth, gateway, hunt, ip-info.
+      Base URL pakai EXPO_PUBLIC_BACKEND_URL + /api (semua route sudah prefix /api). Tolong bersihkan
+      user test yang Anda buat bila memungkinkan.
+    -agent: "testing"
+    -message: >
+      COMPREHENSIVE BACKEND TESTING COMPLETED - ALL TESTS PASSED ✅
+      
+      Tested all 6 backend task groups with 27 individual test scenarios. ALL functionality verified working correctly:
+      
+      1. AUTH/ROLE: ✅ Admin login (role=admin), customer register (role=customer), require_admin protection (403 for non-admin, 401 for no token)
+      
+      2. PACKAGES: ✅ GET /api/plans returns day7/day30/day90 with bandwidth_gb/price/features. Admin CRUD (GET/POST/PATCH/DELETE) fully functional, non-admin blocked with 403
+      
+      3. ORDER FLOW: ✅ Complete flow verified - create order (pending), duplicate blocked (409), list orders (mine & admin), confirm order (activates customer with correct package/country/bandwidth/expiry), reject order, stats show revenue
+      
+      4. ADMIN CUSTOMERS: ✅ Full CRUD - create with package (sets bandwidth 50GB for day30), list, update (suspend/add_days/regenerate_password), soft delete
+      
+      5. SETTINGS: ✅ GET/PUT admin settings (payment_info BCA/1462261696, proxy_host 155.138.227.248:1080), customer endpoints (payment-info, countries, proxy-account)
+      
+      6. REGRESSION: ✅ All existing endpoints working - subscription/activate, auth/me, profile, ip-info, hunt, gateway
+      
+      Backend logs confirm all requests returning correct status codes. Manual verification confirms 100% functionality. Ready for frontend development.
