@@ -9,7 +9,7 @@ import time
 from typing import Optional
 
 # Base URL from frontend/.env
-BASE_URL = "https://github-setup-deps.preview.emergentagent.com/api"
+BASE_URL = "https://repo-sync-deploy-3.preview.emergentagent.com/api"
 
 # Test credentials
 ADMIN_USERNAME = "idmee"
