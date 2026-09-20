@@ -1,5 +1,5 @@
 import Icon from "@react-native-vector-icons/material-design-icons";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
@@ -7,7 +7,7 @@ import { useState } from "react";
 import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, HuntMode, HuntResp, ProxyResultT } from "@/src/api";
+import { api, GatewayT, HuntMode, HuntResp, ProxyResultT } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useToast } from "@/src/components/toast";
 import { useT } from "@/src/settings";
@@ -34,6 +34,21 @@ export default function HuntingScreen() {
   const [modeOpen, setModeOpen] = useState(false);
   const [result, setResult] = useState<HuntResp | null>(null);
   const [connected, setConnected] = useState<ProxyResultT | null>(null);
+
+  const gatewayQ = useQuery({ queryKey: ["gateway"], queryFn: () => api<GatewayT>("/gateway") });
+  const gw = gatewayQ.data;
+  const srvHost = gw?.configured ? gw.host : user?.server_host;
+  const srvPort = gw?.configured ? gw.port : user?.server_port;
+  const srvUser = gw?.configured ? gw.username : "";
+  const srvPass = gw?.configured ? gw.password : user?.proxy_password;
+
+  const copyCreds = async () => {
+    const parts = [`${srvHost}:${srvPort}`];
+    if (srvUser) parts.push(`${srvUser}:${srvPass}`);
+    else if (srvPass) parts.push(srvPass);
+    await Clipboard.setStringAsync(parts.join(":"));
+    toast.show(t("creds_copied"), "success");
+  };
 
   const huntMut = useMutation({
     mutationFn: () => api<HuntResp>("/hunt", { method: "POST", json: { target_ip: targetIp.trim(), mode } }),
@@ -213,16 +228,20 @@ export default function HuntingScreen() {
                 </View>
                 <View style={styles.sRow}>
                   <Text style={styles.sKey}>{t("server_label")}:</Text>
-                  <Text style={styles.sVal} numberOfLines={1}>{user?.server_host}</Text>
+                  <Text style={styles.sVal} numberOfLines={1}>{srvHost}</Text>
                 </View>
                 <View style={styles.sDivider} />
                 <View style={styles.sRow}>
                   <Text style={styles.sKey}>{t("port_label")}:</Text>
-                  <Text style={[styles.sVal, styles.sPort]}>{user?.server_port}</Text>
+                  <Text style={[styles.sVal, styles.sPort]}>{srvPort}</Text>
                 </View>
               </View>
             ) : null}
 
+            <Pressable testID="success-copy-button" onPress={copyCreds} style={styles.copyCredsBtn}>
+              <Icon name="content-copy" size={16} color={colors.onBrandTertiary} />
+              <Text style={styles.copyCredsText}>{t("copy_creds")}</Text>
+            </Pressable>
             <Pressable testID="success-ok-button" onPress={() => setConnected(null)} style={styles.okBtn}>
               <Text style={styles.okText}>{t("ok")}</Text>
             </Pressable>
@@ -274,8 +293,10 @@ const useStyles = makeStyles((colors) => ({
   sVal: { color: colors.onSurface, fontSize: font.sm, fontFamily: mono, fontWeight: "700", flexShrink: 1, textAlign: "right" },
   sPort: { color: colors.brandPrimary, fontSize: font.lg },
   sDivider: { height: 1, backgroundColor: colors.divider, marginVertical: 2 },
-  okBtn: { marginTop: spacing.lg, minWidth: 120, height: 48, borderRadius: radius.md, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center" },
+  okBtn: { marginTop: spacing.md, minWidth: 120, height: 48, borderRadius: radius.md, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center" },
   okText: { color: colors.onBrandPrimary, fontSize: font.base, fontWeight: "800", letterSpacing: 1 },
+  copyCredsBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.lg, alignSelf: "stretch", height: 46, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.brandTertiary },
+  copyCredsText: { color: colors.onBrandTertiary, fontSize: font.sm, fontWeight: "800", letterSpacing: 0.5 },
   emptyCard: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.lg, padding: spacing.xxl, alignItems: "center", gap: spacing.md },
   emptyText: { color: colors.onSurfaceTertiary, fontSize: font.base, textAlign: "center" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center", padding: spacing.lg },

@@ -31,6 +31,7 @@ export default function RootLayout() {
                   <Stack.Screen name="servers" />
                   <Stack.Screen name="langganan" />
                   <Stack.Screen name="pembelian" />
+                  <Stack.Screen name="gateway" />
                 </Stack>
               </AuthProvider>
             </ToastProvider>

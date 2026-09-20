@@ -12,11 +12,27 @@ export type UserT = {
   server_host: string;
   server_port: number;
   proxy_password: string;
+  gateway_host: string;
+  gateway_port: number;
+  gateway_user: string;
+  gateway_pass: string;
+  gateway_protocol: string;
+  gateway_online: boolean;
   whitelist_ips: string[];
   traffic_bytes: number;
   total_pool: string;
   expires_at: string | null;
   created_at: string | null;
+};
+
+export type GatewayT = {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  protocol: string;
+  online: boolean;
+  configured: boolean;
 };
 
 export type AuthResp = { access_token: string; token_type: string; user: UserT };

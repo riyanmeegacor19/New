@@ -87,6 +87,12 @@ class UserDoc(BaseDocument):
     server_host: str = "server.riyanmee.web.id"
     server_port: int = 5245
     proxy_password: str = ""
+    gateway_host: str = ""
+    gateway_port: int = 0
+    gateway_user: str = ""
+    gateway_pass: str = ""
+    gateway_protocol: str = "socks5"
+    gateway_online: bool = False
     whitelist_ips: List[str] = Field(default_factory=list)
     traffic_bytes: int = 0
     expires_at: datetime = Field(default_factory=lambda: utcnow() + timedelta(days=30))
@@ -158,6 +164,18 @@ class ActivateIn(BaseModel):
     plan_id: str
 
 
+class GatewayIn(BaseModel):
+    host: str
+    port: int
+    username: str = ""
+    password: str = ""
+    protocol: str = "socks5"
+
+
+class ImportIn(BaseModel):
+    data: str
+
+
 # ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
@@ -208,6 +226,12 @@ def public_user(user: UserDoc) -> dict:
         "server_host": user.server_host,
         "server_port": user.server_port,
         "proxy_password": user.proxy_password,
+        "gateway_host": user.gateway_host,
+        "gateway_port": user.gateway_port,
+        "gateway_user": user.gateway_user,
+        "gateway_pass": user.gateway_pass,
+        "gateway_protocol": user.gateway_protocol,
+        "gateway_online": user.gateway_online,
         "whitelist_ips": user.whitelist_ips,
         "traffic_bytes": user.traffic_bytes,
         "total_pool": TOTAL_POOL,
@@ -249,6 +273,21 @@ async def geo_lookup(ip: str) -> dict:
         "longitude": data.get("longitude"),
         "timezone": (data.get("timezone") or {}).get("id", ""),
     }
+
+
+async def tcp_check(host: str, port: int, timeout: float = 5.0) -> bool:
+    try:
+        fut = asyncio.open_connection(host=host, port=port)
+        _, writer = await asyncio.wait_for(fut, timeout=timeout)
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
+
 
 
 def gen_ip(seed_ip: str, salt: int) -> str:
@@ -566,6 +605,107 @@ async def delete_proxy(proxy_id: str, user: Annotated[UserDoc, Depends(current_u
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Proxy tidak ditemukan")
+    return {"ok": True}
+
+
+IMPORT_LINE_RE = re.compile(r"^(?:(?P<label>[^|]+)\|)?\s*(?:(?P<proto>\w+)://)?(?:(?P<user>[^@:]+)@)?(?P<host>[^:@\s]+):(?P<port>\d+)")
+
+
+@api_router.post("/proxies/import")
+async def import_proxies(body: ImportIn, user: Annotated[UserDoc, Depends(current_user)]):
+    lines = [ln.strip() for ln in body.data.splitlines() if ln.strip()]
+    if not lines:
+        raise HTTPException(status_code=400, detail="Tidak ada data untuk diimpor")
+    imported = 0
+    for ln in lines:
+        m = IMPORT_LINE_RE.match(ln)
+        if not m:
+            continue
+        port = int(m.group("port"))
+        if not (1 <= port <= 65535):
+            continue
+        proto = (m.group("proto") or "socks5").lower()
+        if proto not in ("socks5", "http", "https", "ssh"):
+            proto = "socks5"
+        label = (m.group("label") or f"{m.group('host')}").strip()
+        doc = ProxyServerDoc(
+            user_id=str(user.id),
+            label=label,
+            host=m.group("host").strip(),
+            port=port,
+            username=(m.group("user") or "").strip(),
+            password="",
+            protocol=proto,
+        )
+        await db.proxies.insert_one(doc.to_mongo())
+        imported += 1
+    if imported == 0:
+        raise HTTPException(status_code=400, detail="Format tidak dikenali. Gunakan host:port per baris")
+    return {"imported": imported}
+
+
+# ---------------------------------------------------------------------------
+# Gateway (Sambung Gateway) — user's own rotating-proxy VPS
+# ---------------------------------------------------------------------------
+@api_router.get("/gateway")
+async def get_gateway(user: Annotated[UserDoc, Depends(current_user)]):
+    return {
+        "host": user.gateway_host,
+        "port": user.gateway_port,
+        "username": user.gateway_user,
+        "password": user.gateway_pass,
+        "protocol": user.gateway_protocol,
+        "online": user.gateway_online,
+        "configured": bool(user.gateway_host and user.gateway_port),
+    }
+
+
+@api_router.put("/gateway")
+async def set_gateway(body: GatewayIn, user: Annotated[UserDoc, Depends(current_user)]):
+    if body.protocol not in ("socks5", "http", "https", "ssh"):
+        raise HTTPException(status_code=400, detail="Protokol tidak valid")
+    if not (1 <= body.port <= 65535):
+        raise HTTPException(status_code=400, detail="Port harus 1-65535")
+    if not body.host.strip():
+        raise HTTPException(status_code=400, detail="Host wajib diisi")
+    online = await tcp_check(body.host.strip(), body.port)
+    await db.users.update_one(
+        {"_id": ObjectId(user.id)},
+        {"$set": {
+            "gateway_host": body.host.strip(),
+            "gateway_port": body.port,
+            "gateway_user": body.username.strip(),
+            "gateway_pass": body.password,
+            "gateway_protocol": body.protocol,
+            "gateway_online": online,
+        }},
+    )
+    return {
+        "host": body.host.strip(),
+        "port": body.port,
+        "username": body.username.strip(),
+        "password": body.password,
+        "protocol": body.protocol,
+        "online": online,
+        "configured": True,
+    }
+
+
+@api_router.post("/gateway/test")
+async def test_gateway(user: Annotated[UserDoc, Depends(current_user)]):
+    if not (user.gateway_host and user.gateway_port):
+        raise HTTPException(status_code=400, detail="Gateway belum dikonfigurasi")
+    online = await tcp_check(user.gateway_host, user.gateway_port)
+    await db.users.update_one({"_id": ObjectId(user.id)}, {"$set": {"gateway_online": online}})
+    return {"online": online}
+
+
+@api_router.delete("/gateway")
+async def clear_gateway(user: Annotated[UserDoc, Depends(current_user)]):
+    await db.users.update_one(
+        {"_id": ObjectId(user.id)},
+        {"$set": {"gateway_host": "", "gateway_port": 0, "gateway_user": "", "gateway_pass": "", "gateway_online": False}},
+    )
     return {"ok": True}
 
 

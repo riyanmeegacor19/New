@@ -26,6 +26,8 @@ export default function ServersScreen() {
   const qc = useQueryClient();
 
   const [modal, setModal] = useState(false);
+  const [importModal, setImportModal] = useState(false);
+  const [importText, setImportText] = useState("");
   const [form, setForm] = useState({ label: "", host: "", port: "1080", protocol: "socks5", username: "", password: "" });
 
   const proxiesQ = useQuery({ queryKey: ["proxies"], queryFn: () => api<MyProxyT[]>("/proxies") });
@@ -46,6 +48,17 @@ export default function ServersScreen() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["proxies"] });
       toast.show(t("server_removed"), "info");
+    },
+    onError: (e: Error) => toast.show(e.message, "error"),
+  });
+
+  const importMut = useMutation({
+    mutationFn: () => api<{ imported: number }>("/proxies/import", { method: "POST", json: { data: importText } }),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["proxies"] });
+      setImportModal(false);
+      setImportText("");
+      toast.show(`${r.imported} ${t("imported_n")}`, "success");
     },
     onError: (e: Error) => toast.show(e.message, "error"),
   });
@@ -92,9 +105,11 @@ export default function ServersScreen() {
           <Text style={styles.title}>{t("servers_title")}</Text>
           <Text style={styles.subtitle}>{t("servers_sub")}</Text>
         </View>
-        <Pressable testID="export-servers-button" onPress={exportServers} style={styles.exportBtn} hitSlop={8}>
-          <Icon name="file-download-outline" size={18} color={colors.onBrandTertiary} />
-          <Text style={styles.exportText}>{t("export_servers")}</Text>
+        <Pressable testID="import-servers-button" onPress={() => setImportModal(true)} style={styles.iconBtn} hitSlop={8}>
+          <Icon name="file-upload-outline" size={20} color={colors.onSurfaceSecondary} />
+        </Pressable>
+        <Pressable testID="export-servers-button" onPress={exportServers} style={styles.iconBtn} hitSlop={8}>
+          <Icon name="file-download-outline" size={20} color={colors.onBrandTertiary} />
         </Pressable>
         <Pressable testID="add-server-button" onPress={() => setModal(true)} style={styles.addBtn} hitSlop={8}>
           <Icon name="plus" size={24} color={colors.onBrandPrimary} />
@@ -189,6 +204,47 @@ export default function ServersScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={importModal} transparent animationType="slide" onRequestClose={() => setImportModal(false)}>
+        <View style={styles.backdrop}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
+            <Text style={styles.sheetTitle}>{t("import_title")}</Text>
+            <KeyboardAwareScrollView bottomOffset={24} keyboardShouldPersistTaps="handled">
+              <Text style={styles.importHint}>{t("import_hint")}</Text>
+              <TextInput
+                testID="import-textarea"
+                style={styles.textarea}
+                multiline
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder={"VPS Tokyo | socks5://user@103.20.30.40:1080\n88.99.10.20:3128"}
+                placeholderTextColor={colors.muted}
+                value={importText}
+                onChangeText={setImportText}
+              />
+              <View style={styles.btnRow}>
+                <Pressable testID="import-cancel-button" onPress={() => setImportModal(false)} style={[styles.btn, { borderColor: colors.divider }]}>
+                  <Text style={[styles.btnText, { color: colors.onSurfaceSecondary }]}>{t("cancel")}</Text>
+                </Pressable>
+                <Pressable
+                  testID="import-submit-button"
+                  onPress={() => {
+                    if (!importText.trim()) {
+                      toast.show(t("import_empty"), "error");
+                      return;
+                    }
+                    importMut.mutate();
+                  }}
+                  style={[styles.btn, { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary }]}
+                  disabled={importMut.isPending}
+                >
+                  {importMut.isPending ? <ActivityIndicator size="small" color={colors.onBrandPrimary} /> : <Text style={[styles.btnText, { color: colors.onBrandPrimary }]}>{t("import_btn")}</Text>}
+                </Pressable>
+              </View>
+            </KeyboardAwareScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -201,8 +257,9 @@ const useStyles = makeStyles((colors) => ({
   title: { color: colors.onSurface, fontSize: font.xl, fontWeight: "800", letterSpacing: 1 },
   subtitle: { color: colors.muted, fontSize: font.sm, marginTop: 2 },
   addBtn: { width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center" },
-  exportBtn: { flexDirection: "row", alignItems: "center", gap: spacing.xs, height: 44, paddingHorizontal: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.brandTertiary, marginRight: spacing.sm },
-  exportText: { color: colors.onBrandTertiary, fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
+  iconBtn: { width: 44, height: 44, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary, alignItems: "center", justifyContent: "center", marginRight: spacing.sm },
+  importHint: { color: colors.onSurfaceTertiary, fontSize: font.sm, lineHeight: 18, marginTop: spacing.sm, marginBottom: spacing.sm },
+  textarea: { backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.md, color: colors.onSurface, fontSize: font.sm, fontFamily: mono, padding: spacing.md, minHeight: 140, textAlignVertical: "top" },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.md },
   card: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.lg, padding: spacing.lg },
   protoDot: { width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center" },
