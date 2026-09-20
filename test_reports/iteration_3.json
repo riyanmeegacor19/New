@@ -1,0 +1,42 @@
+{
+  "summary": "Full-stack regression for the rebuilt RIYANMEE PROXY (HNPROXY V3 style). Backend: 21/21 pytest cases pass against public preview URL — auth (register 201 + duplicate 409 + demo login + /me protected + change-password 400), profile whitelist (add/invalid 400/duplicate 409/remove), reset-traffic, /my-ip, ip-info (valid geo via ipwho.is + invalid 400), hunt for all 4 modes returns 12 real-geo proxies + invalid 400, history sort-desc + clear + auth-guard. Frontend E2E on 390x844 web preview: login (demo) -> dashboard renders username idmee, PREMIUM MEMBER, countdown '30H 12J 45M 54D', server/port, whitelist add+remove, Whitelist My IP prefill (104.198.214.223), change-password modal opens; go-hunting card -> Hunting screen, mode modal picks FULL SCAN, 'Mulai Pencarian' returns 12 proxies (proxy-item-0..11 all render with San Jose/Google LLC for 8.8.8.8), 'Salin Semua' shows '12 proxy disalin' toast; Cek IP for 1.1.1.1 -> Brisbane/Australia/Cloudflare Inc/AS13335; Riwayat lists 2 entries and clears; Logout returns to login; Direct /beranda without session correctly redirects to /login; Register flow creates FREE MEMBER (e2e_<ts>) and auto-logs in. No red console errors were captured during the flow.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Change Password modal (beranda.tsx)", "issue": "In the mobile viewport, the modal card is tall enough that 'pw-cancel-button' / 'pw-save-button' sit below the visible fold and Playwright reports 'Element is outside of the viewport' when scrollIntoView is attempted. Real users on ~390x844 must scroll inside the modal to reach the buttons. Consider wrapping modal content in a ScrollView or reducing vertical padding so the action row is reachable without scrolling. Reference: /app/frontend/app/(tabs)/beranda.tsx around the sheet layout.", "testID": "pw-cancel-button", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Hunting", "issues": ["Copy toast overlaps the target-IP input for a moment ('12 proxy disalin' banner sits on top of alamat IP field). Non-blocking, purely cosmetic."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_riyanmee_backend.py",
+    "/app/test_reports/pytest/iter3.xml",
+    "/app/test_reports/browser/iter3_dashboard.jpeg",
+    "/app/test_reports/browser/iter3_hunt.jpeg",
+    "/app/test_reports/browser/iter3_cekip.jpeg",
+    "/app/test_reports/browser/iter3_riwayat.jpeg",
+    "/app/test_reports/browser/iter3_register.jpeg"
+  ],
+  "action_items": [
+    "(Nice to have) Make the change-password modal scrollable or shorter so pw-cancel/pw-save buttons are reachable on 390x844 without extra scrolling."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~470 lines and still mixes helpers + routes; fine for current scope but consider splitting if it grows.",
+    "Frontend `.env` exposes only `EXPO_PUBLIC_BACKEND_URL`; tests fall back through EXPO_BACKEND_URL / EXPO_PUBLIC_BACKEND_URL to support both.",
+    "Auth flow correctly stores JWT in secure storage under `riyanmee_token` and hydrates via /auth/me on load; guard behavior verified (direct /beranda -> /login redirect works)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_riyanmee_backend.py",
+    "/app/test_reports/pytest/iter3.xml",
+    "/app/test_reports/iteration_3.json"
+  ],
+  "success_rate": { "backend": "100% (21/21 pytest)", "frontend": "100% for all seven requested E2E flows (login, register, dashboard, hunting, cek IP, riwayat, logout, guard redirect)" },
+  "seed_data_creation": "Backend seeds demo user 'idmee' idempotently at startup. Test run created transient users test_regr_<ts> and e2e_<ts>; residual only if user runs again without DB reset (usernames are unique).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend base URL from env: EXPO_BACKEND_URL or EXPO_PUBLIC_BACKEND_URL. Demo creds idmee/riyanmee123. Key testIDs: login-username-input, login-password-input, login-submit-button, go-register-button, register-{username,password,confirm}-input, register-submit-button, profile-card, profile-username, membership-countdown, whitelist-input, whitelist-myip-button, whitelist-add-button, whitelist-item-<ip>, whitelist-remove-<ip>, change-password-button, cur-password-input, new-password-input, pw-save-button, pw-cancel-button (bottom of modal - scroll needed on small viewports), reset-traffic-button, clear-history-button, go-hunting-card, go-cekip-card, hunt-target-input, hunt-mode-button, mode-option-{ultimate|full|city|isp}, hunt-start-button, hunt-results, proxy-item-<0..11>, hunt-copy-all, cekip-input, cekip-button, cekip-result, history-list, history-row-<id>, history-empty, riwayat-clear-button, logout-button. Native tabs render on web too so both link-cards and tab bar navigation work.",
+  "rca_of_issue": "No functional bug to RCA — only the cosmetic modal-scroll observation above."
+}

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="1.068" timestamp="2026-09-20T08:50:51.957358+00:00" hostname="agent-env-32428583-3423-46af-9e1a-9f1e2bad99f0"><testcase classname="tests.test_review_iteration" name="test_core_review_flows" time="0.562"><failure message="assert (500 == 200)&#10; +  where 500 = &lt;Response [500]&gt;.status_code">backend/tests/test_review_iteration.py:22: in test_core_review_flows
+    assert exported.status_code == 200 and exported.json()["blob"].startswith("RIYANMEE::")
+E   assert (500 == 200)
+E    +  where 500 = &lt;Response [500]&gt;.status_code</failure></testcase><testcase classname="tests.test_review_iteration" name="test_session_invalid_id_and_logs" time="0.193" /></testsuite></testsuites>

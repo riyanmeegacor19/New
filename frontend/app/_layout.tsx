@@ -6,25 +6,28 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { ToastProvider } from "@/src/components/toast";
+import { AuthProvider } from "@/src/auth";
 import { queryClient } from "@/src/query-client";
 
 // Disable logbox errors etc so that users can see the app
 // and agent works as expected.
-LogBox.ignoreAllLogs(true)
+LogBox.ignoreAllLogs(true);
 
 export default function RootLayout() {
-  // One app level ErrorBoundary; a render crash shows a reload screen
-  // instead of a blank app.
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <KeyboardProvider>
           <ToastProvider>
-            <StatusBar style="light" />
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="tools" />
-            </Stack>
+            <AuthProvider>
+              <StatusBar style="light" />
+              <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="index" />
+                <Stack.Screen name="login" />
+                <Stack.Screen name="register" />
+                <Stack.Screen name="(tabs)" />
+              </Stack>
+            </AuthProvider>
           </ToastProvider>
         </KeyboardProvider>
       </QueryClientProvider>

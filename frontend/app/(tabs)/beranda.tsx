@@ -1,26 +1,35 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
 import Icon from "@react-native-vector-icons/material-design-icons";
-import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as Clipboard from "expo-clipboard";
+import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
-  Animated,
+  ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, fetchSession, ServerT, SessionT, ToolHistoryT } from "@/src/api";
-import { usesNativeTabs } from "@/src/navigation";
+import { api, formatBytes, UserT } from "@/src/api";
+import { useAuth } from "@/src/auth";
 import { useToast } from "@/src/components/toast";
+import { usesNativeTabs } from "@/src/navigation";
 import { font, makeStyles, mono, radius, spacing, useTheme } from "@/src/theme";
 
-function fmtDuration(totalSeconds: number) {
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
+function countdown(target: string | null, now: number) {
+  if (!target) return { d: 0, h: 0, m: 0, s: 0, expired: true };
+  const diff = new Date(target).getTime() - now;
+  if (diff <= 0) return { d: 0, h: 0, m: 0, s: 0, expired: true };
+  const d = Math.floor(diff / 86400000);
+  const h = Math.floor((diff % 86400000) / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  return { d, h, m, s, expired: false };
 }
 
 export default function BerandaScreen() {
@@ -30,342 +39,421 @@ export default function BerandaScreen() {
   const router = useRouter();
   const toast = useToast();
   const qc = useQueryClient();
+  const { user: authUser, signOut, setUser } = useAuth();
 
   const [tick, setTick] = useState(Date.now());
   useEffect(() => {
-    const timer = setInterval(() => setTick(Date.now()), 1000);
-    return () => clearInterval(timer);
+    const t = setInterval(() => setTick(Date.now()), 1000);
+    return () => clearInterval(t);
   }, []);
 
-  const sessionQ = useQuery({
-    queryKey: ["session"],
-    queryFn: fetchSession,
-    refetchInterval: 5000,
+  const profileQ = useQuery({
+    queryKey: ["profile"],
+    queryFn: () => api<UserT>("/profile"),
+    initialData: authUser ?? undefined,
   });
-  const historyQ = useQuery({
-    queryKey: ["tools"],
-    queryFn: () => api<ToolHistoryT[]>("/tools/history"),
-    refetchInterval: 15000,
-  });
+  const user = profileQ.data ?? authUser;
 
-  const session: SessionT | undefined = sessionQ.data?.session;
-  const server: ServerT | undefined = sessionQ.data?.server;
-  const state = session?.state ?? "disconnected";
-
-  const lastSpeed = historyQ.data?.find((h) => h.kind === "speed")?.data as
-    | { mbps: number }
-    | undefined;
-
-  const connectedSeconds =
-    state === "connected" && session?.connected_at
-      ? Math.max(0, Math.floor((tick - new Date(session.connected_at).getTime()) / 1000))
-      : 0;
-
-  const pulse = useRef(new Animated.Value(0)).current;
-  const active = state !== "disconnected";
   useEffect(() => {
-    if (!active) {
-      pulse.setValue(0);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1500, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 1, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [active, pulse]);
+    if (profileQ.data) setUser(profileQ.data);
+  }, [profileQ.data, setUser]);
 
-  const connectMut = useMutation({
-    mutationFn: (serverId: string) =>
-      api<SessionT>("/session/connect", { method: "POST", json: { server_id: serverId } }),
-    onSuccess: (s) => {
-      qc.invalidateQueries({ queryKey: ["session"] });
-      qc.invalidateQueries({ queryKey: ["logs"] });
-      toast.show(
-        s.error ? `Koneksi gagal: ${s.error}` : `Terhubung ke ${s.server_name}`,
-        s.error ? "error" : "success",
-      );
-    },
-    onError: (e: Error) => {
-      qc.invalidateQueries({ queryKey: ["session"] });
-      toast.show(e.message, "error");
-    },
-  });
+  const [whitelistIp, setWhitelistIp] = useState("");
+  const [pwModal, setPwModal] = useState(false);
+  const [curPw, setCurPw] = useState("");
+  const [newPw, setNewPw] = useState("");
 
-  const disconnectMut = useMutation({
-    mutationFn: () => api<SessionT>("/session/disconnect", { method: "POST" }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["session"] });
-      qc.invalidateQueries({ queryKey: ["logs"] });
-      toast.show("Tunnel diputus", "info");
+  const whitelistMut = useMutation({
+    mutationFn: (ip: string) => api<UserT>("/profile/whitelist", { method: "POST", json: { ip } }),
+    onSuccess: (u) => {
+      qc.setQueryData(["profile"], u);
+      setWhitelistIp("");
+      toast.show("IP ditambahkan ke whitelist", "success");
     },
     onError: (e: Error) => toast.show(e.message, "error"),
   });
 
-  const doConnect = () => {
-    if (state === "connected") {
-      disconnectMut.mutate();
-      return;
-    }
-    if (!session?.server_id) {
-      toast.show("Pilih server dulu di tab Server", "error");
-      return;
-    }
-    connectMut.mutate(session.server_id);
+  const removeWlMut = useMutation({
+    mutationFn: (ip: string) => api<UserT>(`/profile/whitelist/${encodeURIComponent(ip)}`, { method: "DELETE" }),
+    onSuccess: (u) => {
+      qc.setQueryData(["profile"], u);
+      toast.show("IP dihapus dari whitelist", "info");
+    },
+    onError: (e: Error) => toast.show(e.message, "error"),
+  });
+
+  const resetTrafficMut = useMutation({
+    mutationFn: () => api<UserT>("/profile/reset-traffic", { method: "POST" }),
+    onSuccess: (u) => {
+      qc.setQueryData(["profile"], u);
+      toast.show("Traffic direset", "success");
+    },
+    onError: (e: Error) => toast.show(e.message, "error"),
+  });
+
+  const clearHistoryMut = useMutation({
+    mutationFn: () => api("/history", { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["history"] });
+      toast.show("Riwayat dibersihkan", "info");
+    },
+    onError: (e: Error) => toast.show(e.message, "error"),
+  });
+
+  const myIpMut = useMutation({
+    mutationFn: () => api<{ ip: string }>("/my-ip"),
+    onSuccess: (r) => setWhitelistIp(r.ip),
+    onError: (e: Error) => toast.show(e.message, "error"),
+  });
+
+  const changePwMut = useMutation({
+    mutationFn: () =>
+      api("/auth/change-password", {
+        method: "POST",
+        json: { current_password: curPw, new_password: newPw },
+      }),
+    onSuccess: () => {
+      setPwModal(false);
+      setCurPw("");
+      setNewPw("");
+      toast.show("Password berhasil diganti", "success");
+    },
+    onError: (e: Error) => toast.show(e.message, "error"),
+  });
+
+  const copyCreds = async () => {
+    if (!user) return;
+    await Clipboard.setStringAsync(`${user.server_host}:${user.server_port}`);
+    toast.show("Alamat server disalin", "success");
   };
 
-  const statusText =
-    state === "connected" ? "TERHUBUNG" : state === "connecting" ? "MENGHUBUNGKAN..." : "TERPUTUS";
-  const statusColor =
-    state === "connected" ? colors.brandPrimary : state === "connecting" ? colors.warning : colors.error;
+  if (!user) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={colors.brandPrimary} />
+      </View>
+    );
+  }
 
+  const cd = countdown(user.expires_at, tick);
   const bottomPad = usesNativeTabs ? insets.bottom + 24 : 24;
 
   return (
     <View style={styles.screen}>
+      <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
+        <View style={styles.flex1}>
+          <View style={styles.brandRow}>
+            <Text style={styles.brand}>RIYANMEE</Text>
+            <Text style={styles.brandAccent}> PROXY</Text>
+          </View>
+          <Text style={styles.brandSub}>Hunter Engine Access</Text>
+        </View>
+        <Pressable testID="logout-button" onPress={signOut} style={styles.logoutBtn} hitSlop={8}>
+          <Text style={styles.logoutText}>LOGOUT</Text>
+        </Pressable>
+      </View>
+
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.sm, paddingBottom: bottomPad + 56 },
-        ]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 40 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <View style={styles.flex1}>
-            <Text style={styles.brandTitle}>RIYANMEE PROXY</Text>
-            <View style={styles.statusRow}>
-              <View testID="session-status-dot" style={[styles.statusDot, { backgroundColor: statusColor }]} />
-              <Text testID="session-status" style={[styles.statusText, { color: statusColor }]}>
-                {statusText}
+        <View testID="profile-card" style={styles.card}>
+          <Text style={styles.cardLabel}>PROFIL PELANGGAN</Text>
+          <View style={styles.profileRow}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{user.username.charAt(0).toUpperCase()}</Text>
+            </View>
+            <View style={styles.flex1}>
+              <Text testID="profile-username" style={styles.username}>{user.username}</Text>
+              <Text style={styles.tier}>{user.tier}</Text>
+              <Text style={styles.activeLabel}>
+                Aktif:{" "}
+                <Text style={styles.activeValue} testID="membership-countdown">
+                  {cd.expired ? "KEDALUWARSA" : `${cd.d}H ${cd.h}J ${cd.m}M ${cd.s}D`}
+                </Text>
               </Text>
             </View>
           </View>
-          <Pressable
-            testID="tools-link"
-            onPress={() => router.push("/tools")}
-            style={styles.iconButton}
-            hitSlop={8}
-          >
-            <Icon name="speedometer" size={22} color={colors.onSurfaceSecondary} />
-          </Pressable>
-        </View>
 
-        {/* Connect ring */}
-        <View style={styles.ringZone}>
-          {active ? (
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.pulseRing,
-                {
-                  transform: [
-                    { scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.45] }) },
-                  ],
-                  opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] }),
-                  borderColor: statusColor,
-                },
-              ]}
+          <Pressable testID="server-creds" onPress={copyCreds} style={styles.credBox}>
+            <View style={styles.credRow}>
+              <Text style={styles.credKey}>SERVER</Text>
+              <Text style={styles.credVal} numberOfLines={1}>{user.server_host}</Text>
+            </View>
+            <View style={styles.credDivider} />
+            <View style={styles.credRow}>
+              <Text style={styles.credKey}>PORT</Text>
+              <Text style={[styles.credVal, styles.credPort]}>{user.server_port}</Text>
+            </View>
+          </Pressable>
+
+          <View style={styles.btnRow}>
+            <Pressable testID="change-password-button" onPress={() => setPwModal(true)} style={[styles.actionBtn, styles.actionInfo]}>
+              <Text style={[styles.actionText, { color: colors.info }]}>GANTI PASSWORD</Text>
+            </Pressable>
+            <Pressable
+              testID="clear-history-button"
+              onPress={() => clearHistoryMut.mutate()}
+              style={[styles.actionBtn, styles.actionDanger]}
+            >
+              <Text style={[styles.actionText, { color: colors.error }]}>CLEAR ALL</Text>
+            </Pressable>
+          </View>
+          <Pressable
+            testID="reset-traffic-button"
+            onPress={() => resetTrafficMut.mutate()}
+            style={[styles.actionBtnFull, { borderColor: colors.divider, backgroundColor: colors.surfaceTertiary }]}
+          >
+            <Text style={[styles.actionText, { color: colors.onSurfaceSecondary }]}>
+              RESET TRAFFIC · {formatBytes(user.traffic_bytes)}
+            </Text>
+          </Pressable>
+
+          <View style={styles.hr} />
+
+          <Text style={styles.cardLabel}>IP WHITELIST</Text>
+          <View style={styles.wlInputRow}>
+            <TextInput
+              testID="whitelist-input"
+              style={styles.wlInput}
+              placeholder="cth: 59.153.131.72"
+              placeholderTextColor={colors.muted}
+              autoCapitalize="none"
+              value={whitelistIp}
+              onChangeText={setWhitelistIp}
             />
+            <Pressable
+              testID="whitelist-myip-button"
+              onPress={() => myIpMut.mutate()}
+              style={styles.myIpBtn}
+              disabled={myIpMut.isPending}
+            >
+              {myIpMut.isPending ? (
+                <ActivityIndicator size="small" color={colors.onBrandPrimary} />
+              ) : (
+                <Text style={styles.myIpText}>WHITELIST{"\n"}MY IP</Text>
+              )}
+            </Pressable>
+          </View>
+          <Pressable
+            testID="whitelist-add-button"
+            onPress={() => {
+              if (!whitelistIp.trim()) {
+                toast.show("Isi alamat IP dulu", "error");
+                return;
+              }
+              whitelistMut.mutate(whitelistIp.trim());
+            }}
+            style={[styles.actionBtnFull, { backgroundColor: colors.brandTertiary, borderColor: colors.border }]}
+          >
+            <Text style={[styles.actionText, { color: colors.onBrandTertiary }]}>TAMBAH KE WHITELIST</Text>
+          </Pressable>
+
+          {user.whitelist_ips.length > 0 ? (
+            <View style={styles.wlList}>
+              {user.whitelist_ips.map((ip) => (
+                <View key={ip} testID={`whitelist-item-${ip}`} style={styles.wlChip}>
+                  <Text style={styles.wlChipText}>{ip}</Text>
+                  <Pressable onPress={() => removeWlMut.mutate(ip)} hitSlop={8} testID={`whitelist-remove-${ip}`}>
+                    <Icon name="close" size={16} color={colors.muted} />
+                  </Pressable>
+                </View>
+              ))}
+            </View>
           ) : null}
-          <Pressable
-            testID="connect-button"
-            onPress={doConnect}
-            style={[
-              styles.connectCircle,
-              { borderColor: active ? statusColor : colors.border },
-            ]}
-          >
-            <Icon
-              name="power"
-              size={52}
-              color={active ? statusColor : colors.onSurfaceTertiary}
-            />
-            <Text style={[styles.connectLabel, { color: active ? statusColor : colors.onSurfaceTertiary }]}>
-              {state === "connected" ? "PUTUSKAN" : "HUBUNGKAN"}
-            </Text>
-          </Pressable>
-          <Text testID="timer-text" style={styles.timer}>
-            {state === "connected" ? fmtDuration(connectedSeconds) : "00:00:00"}
-          </Text>
-        </View>
 
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          <View testID="stat-ping" style={styles.statCard}>
-            <Text style={styles.statLabel}>PING</Text>
-            <Text style={styles.statValue}>
-              {session?.ping_ms != null ? `${session.ping_ms}` : "—"}
-              {session?.ping_ms != null ? <Text style={styles.statUnit}> ms</Text> : null}
-            </Text>
-          </View>
-          <View testID="stat-speed" style={styles.statCard}>
-            <Text style={styles.statLabel}>UNDUH</Text>
-            <Text style={styles.statValue}>
-              {lastSpeed ? `${lastSpeed.mbps}` : "—"}
-              {lastSpeed ? <Text style={styles.statUnit}> Mbps</Text> : null}
-            </Text>
-          </View>
-          <View testID="stat-time" style={styles.statCard}>
-            <Text style={styles.statLabel}>WAKTU</Text>
-            <Text style={styles.statValue}>
-              {state === "connected" ? fmtDuration(connectedSeconds) : "—"}
-            </Text>
+          <View style={styles.poolRow}>
+            <Text style={styles.poolLabel}>TOTAL IPS POOL</Text>
+            <View style={styles.poolValueRow}>
+              <Icon name="earth" size={16} color={colors.brandPrimary} />
+              <Text style={styles.poolValue}>{user.total_pool} IPS POOL</Text>
+            </View>
           </View>
         </View>
 
-        {/* Selected server card */}
-        <Pressable
-          testID="selected-server-card"
-          style={({ pressed }) => [styles.serverCard, pressed && { opacity: 0.85 }]}
-          onPress={() => router.push("/server")}
-        >
+        <Pressable testID="go-hunting-card" onPress={() => router.push("/hunting")} style={styles.linkCard}>
+          <Icon name="target" size={22} color={colors.brandPrimary} />
           <View style={styles.flex1}>
-            <Text style={styles.serverCardLabel}>SERVER AKTIF</Text>
-            <Text style={styles.serverCardName}>
-              {server ? server.name : "Belum ada server dipilih"}
-            </Text>
-            <Text style={styles.serverCardMeta}>
-              {server ? `${server.host}:${server.port} · ${server.protocol.toUpperCase()}` : "Pilih server dari daftar untuk mulai tunneling"}
-            </Text>
+            <Text style={styles.linkTitle}>IP Hunting</Text>
+            <Text style={styles.linkSub}>Cari proxy berdasarkan negara, kota & ISP</Text>
           </View>
-          <View testID="change-server-btn" style={styles.changeBadge}>
-            <Text style={styles.changeText}>GANTI</Text>
-          </View>
+          <Icon name="chevron-right" size={24} color={colors.muted} />
         </Pressable>
-
-        {/* Tools card */}
-        <Pressable
-          testID="tools-card"
-          style={({ pressed }) => [styles.serverCard, pressed && { opacity: 0.85 }]}
-          onPress={() => router.push("/tools")}
-        >
+        <Pressable testID="go-cekip-card" onPress={() => router.push("/cekip")} style={styles.linkCard}>
+          <Icon name="web" size={22} color={colors.info} />
           <View style={styles.flex1}>
-            <Text style={styles.serverCardLabel}>ALAT JARINGAN</Text>
-            <Text style={styles.serverCardName}>Tes Kecepatan & Cek IP</Text>
-            <Text style={styles.serverCardMeta}>Uji performa tunnel dan periksa penyamaran IP</Text>
+            <Text style={styles.linkTitle}>Cek Informasi IP</Text>
+            <Text style={styles.linkSub}>Lacak negara, kota, dan ISP dari sebuah IP</Text>
           </View>
           <Icon name="chevron-right" size={24} color={colors.muted} />
         </Pressable>
       </ScrollView>
+
+      <Modal visible={pwModal} transparent animationType="slide" onRequestClose={() => setPwModal(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
+            <Text style={styles.sheetTitle}>Ganti Password</Text>
+            <KeyboardAwareScrollView bottomOffset={24} keyboardShouldPersistTaps="handled">
+              <Text style={styles.fieldLabel}>PASSWORD SAAT INI</Text>
+              <TextInput
+                testID="cur-password-input"
+                style={styles.input}
+                secureTextEntry
+                autoCapitalize="none"
+                value={curPw}
+                onChangeText={setCurPw}
+              />
+              <Text style={styles.fieldLabel}>PASSWORD BARU</Text>
+              <TextInput
+                testID="new-password-input"
+                style={styles.input}
+                secureTextEntry
+                autoCapitalize="none"
+                value={newPw}
+                onChangeText={setNewPw}
+              />
+              <View style={styles.btnRow}>
+                <Pressable testID="pw-cancel-button" onPress={() => setPwModal(false)} style={[styles.sheetBtn, { borderColor: colors.divider }]}>
+                  <Text style={[styles.actionText, { color: colors.onSurfaceSecondary }]}>BATAL</Text>
+                </Pressable>
+                <Pressable
+                  testID="pw-save-button"
+                  onPress={() => {
+                    if (newPw.length < 6) {
+                      toast.show("Password baru minimal 6 karakter", "error");
+                      return;
+                    }
+                    changePwMut.mutate();
+                  }}
+                  style={[styles.sheetBtn, { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary }]}
+                  disabled={changePwMut.isPending}
+                >
+                  {changePwMut.isPending ? (
+                    <ActivityIndicator size="small" color={colors.onBrandPrimary} />
+                  ) : (
+                    <Text style={[styles.actionText, { color: colors.onBrandPrimary }]}>SIMPAN</Text>
+                  )}
+                </Pressable>
+              </View>
+            </KeyboardAwareScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const useStyles = makeStyles((colors) => ({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
-  content: {
+  screen: { flex: 1, backgroundColor: colors.surface },
+  loading: { flex: 1, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: spacing.lg,
-    gap: spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
   },
-  flex1: {
-    flex: 1,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  brandTitle: {
-    color: colors.onSurface,
-    fontSize: font.xl,
-    fontWeight: "800",
-    letterSpacing: 2,
-  },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: spacing.xs,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statusText: {
-    fontSize: font.sm,
-    fontWeight: "700",
-    letterSpacing: 1,
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
+  flex1: { flex: 1 },
+  brandRow: { flexDirection: "row", alignItems: "center" },
+  brand: { color: colors.onSurface, fontSize: font.xl, fontWeight: "800", letterSpacing: 2 },
+  brandAccent: { color: colors.brandPrimary, fontSize: font.xl, fontWeight: "800", letterSpacing: 2 },
+  brandSub: { color: colors.muted, fontSize: font.sm, fontStyle: "italic", marginTop: 2 },
+  logoutBtn: {
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceSecondary,
-    alignItems: "center",
-    justifyContent: "center",
+    borderColor: colors.error,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
-  ringZone: {
-    alignItems: "center",
-    paddingVertical: spacing.xl,
-  },
-  pulseRing: {
-    position: "absolute",
-    width: 210,
-    height: 210,
-    borderRadius: 105,
-    borderWidth: 2,
-  },
-  connectCircle: {
-    width: 196,
-    height: 196,
-    borderRadius: 98,
-    borderWidth: 2,
-    backgroundColor: colors.surfaceSecondary,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-  },
-  connectLabel: {
-    fontSize: font.base,
-    fontWeight: "800",
-    letterSpacing: 2,
-  },
-  timer: {
-    marginTop: spacing.lg,
-    color: colors.onSurface,
-    fontSize: font.xxl,
-    fontFamily: mono,
-    fontWeight: "700",
-  },
-  statsRow: {
-    flexDirection: "row",
-    gap: spacing.md,
-  },
-  statCard: {
-    flex: 1,
+  logoutText: { color: colors.error, fontSize: font.sm, fontWeight: "800", letterSpacing: 1 },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.md },
+  card: {
     backgroundColor: colors.surfaceSecondary,
     borderWidth: 1,
     borderColor: colors.divider,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+  },
+  cardLabel: { color: colors.muted, fontSize: 11, fontWeight: "700", letterSpacing: 1 },
+  profileRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: spacing.md },
+  avatar: {
+    width: 60,
+    height: 60,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandPrimary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { color: colors.onBrandPrimary, fontSize: font.xxl, fontWeight: "800" },
+  username: { color: colors.onSurface, fontSize: font.xl, fontWeight: "800" },
+  tier: { color: colors.brandPrimary, fontSize: font.sm, fontWeight: "700", letterSpacing: 1, marginTop: 2 },
+  activeLabel: { color: colors.muted, fontSize: font.sm, marginTop: spacing.xs },
+  activeValue: { color: colors.onSurfaceSecondary, fontFamily: mono, fontWeight: "700" },
+  credBox: {
+    backgroundColor: colors.surfaceTertiary,
     borderRadius: radius.md,
     padding: spacing.md,
-    gap: spacing.xs,
+    marginTop: spacing.lg,
   },
-  statLabel: {
-    color: colors.muted,
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 1,
+  credRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: spacing.sm },
+  credKey: { color: colors.muted, fontSize: font.sm, fontWeight: "700", letterSpacing: 1 },
+  credVal: { color: colors.onSurface, fontSize: font.base, fontFamily: mono, flexShrink: 1, textAlign: "right" },
+  credPort: { color: colors.brandPrimary, fontWeight: "800" },
+  credDivider: { height: 1, backgroundColor: colors.divider },
+  btnRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.md },
+  actionBtn: { flex: 1, height: 46, borderRadius: radius.md, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  actionInfo: { borderColor: colors.info, backgroundColor: "transparent" },
+  actionDanger: { borderColor: colors.error, backgroundColor: "transparent" },
+  actionBtnFull: {
+    height: 46,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: spacing.md,
   },
-  statValue: {
+  actionText: { fontSize: font.sm, fontWeight: "800", letterSpacing: 1 },
+  hr: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.lg },
+  wlInputRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.md, alignItems: "stretch" },
+  wlInput: {
+    flex: 1,
+    backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    borderRadius: radius.md,
     color: colors.onSurface,
-    fontSize: font.lg,
+    fontSize: font.base,
     fontFamily: mono,
-    fontWeight: "700",
+    paddingHorizontal: spacing.md,
+    height: 52,
   },
-  statUnit: {
-    fontSize: font.sm,
+  myIpBtn: {
+    width: 96,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandPrimary,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  serverCard: {
+  myIpText: { color: colors.onBrandPrimary, fontSize: 11, fontWeight: "800", textAlign: "center", letterSpacing: 0.5 },
+  wlList: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.md },
+  wlChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  wlChipText: { color: colors.onSurfaceSecondary, fontSize: font.sm, fontFamily: mono },
+  poolRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.lg },
+  poolLabel: { color: colors.muted, fontSize: 11, fontWeight: "700", letterSpacing: 1 },
+  poolValueRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  poolValue: { color: colors.brandPrimary, fontSize: font.sm, fontWeight: "800" },
+  linkCard: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
@@ -375,35 +463,37 @@ const useStyles = makeStyles((colors) => ({
     borderRadius: radius.lg,
     padding: spacing.lg,
   },
-  serverCardLabel: {
+  linkTitle: { color: colors.onSurface, fontSize: font.lg, fontWeight: "700" },
+  linkSub: { color: colors.onSurfaceTertiary, fontSize: font.sm, marginTop: 2 },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    maxHeight: "80%",
+  },
+  sheetTitle: { color: colors.onSurface, fontSize: font.lg, fontWeight: "800", marginBottom: spacing.md },
+  fieldLabel: {
     color: colors.muted,
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 1,
+    marginBottom: spacing.sm,
+    marginTop: spacing.md,
   },
-  serverCardName: {
-    color: colors.onSurface,
-    fontSize: font.lg,
-    fontWeight: "700",
-    marginTop: spacing.xs,
-  },
-  serverCardMeta: {
-    color: colors.onSurfaceTertiary,
-    fontSize: font.sm,
-    marginTop: spacing.xs,
-  },
-  changeBadge: {
-    borderRadius: radius.pill,
+  input: {
+    backgroundColor: colors.surfaceTertiary,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.brandTertiary,
+    borderColor: colors.divider,
+    borderRadius: radius.md,
+    color: colors.onSurface,
+    fontSize: font.base,
     paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    height: 50,
   },
-  changeText: {
-    color: colors.onBrandTertiary,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1,
-  },
+  sheetBtn: { flex: 1, height: 48, borderRadius: radius.md, borderWidth: 1, alignItems: "center", justifyContent: "center" },
 }));

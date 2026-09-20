@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Animated, StyleSheet, Text, View } from "react-native";
+import { Animated, Text, View } from "react-native";
 import { makeStyles, useTheme } from "@/src/theme";
 
 type ToastKind = "success" | "error" | "info";

@@ -1,33 +1,44 @@
 import Icon from "@react-native-vector-icons/material-design-icons";
-import { Tabs } from "expo-router";
+import { Redirect, Tabs } from "expo-router";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
-import { Platform, StyleSheet } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 
+import { useAuth } from "@/src/auth";
 import { usesNativeTabs } from "@/src/navigation";
 import { makeStyles, useTheme } from "@/src/theme";
 
 export default function TabsLayout() {
   const { colors } = useTheme();
   const styles = useStyles();
+  const { user, hydrated } = useAuth();
+
+  if (!hydrated) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={colors.brandPrimary} />
+      </View>
+    );
+  }
+  if (!user) return <Redirect href="/login" />;
 
   if (usesNativeTabs) {
     return (
       <NativeTabs>
         <NativeTabs.Trigger name="beranda">
-          <NativeTabs.Trigger.Icon sf="house.fill" />
+          <NativeTabs.Trigger.Icon sf="person.crop.circle.fill" />
           <NativeTabs.Trigger.Label>Beranda</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="server">
-          <NativeTabs.Trigger.Icon sf="servercluster" />
-          <NativeTabs.Trigger.Label>Server</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger name="hunting">
+          <NativeTabs.Trigger.Icon sf="scope" />
+          <NativeTabs.Trigger.Label>Hunting</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="config">
-          <NativeTabs.Trigger.Icon sf="gearshape.fill" />
-          <NativeTabs.Trigger.Label>Config</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger name="cekip">
+          <NativeTabs.Trigger.Icon sf="globe" />
+          <NativeTabs.Trigger.Label>Cek IP</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="log">
-          <NativeTabs.Trigger.Icon sf="terminal" />
-          <NativeTabs.Trigger.Label>Log</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger name="riwayat">
+          <NativeTabs.Trigger.Icon sf="clock.fill" />
+          <NativeTabs.Trigger.Label>Riwayat</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
       </NativeTabs>
     );
@@ -39,55 +50,33 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.brandPrimary,
         tabBarInactiveTintColor: colors.muted,
-        tabBarStyle: [
-          styles.tabBar,
-          Platform.OS === "web" ? { height: 64 } : {},
-        ],
+        tabBarStyle: [styles.tabBar, Platform.OS === "web" ? { height: 64 } : {}],
         tabBarItemStyle: { alignSelf: "center" },
         sceneStyle: { backgroundColor: colors.surface },
       }}
     >
       <Tabs.Screen
         name="beranda"
-        options={{
-          title: "Beranda",
-          tabBarIcon: ({ color, size }) => (
-            <Icon name="home-variant" color={color} size={size} />
-          ),
-        }}
+        options={{ title: "Beranda", tabBarIcon: ({ color, size }) => <Icon name="account-circle" color={color} size={size} /> }}
       />
       <Tabs.Screen
-        name="server"
-        options={{
-          title: "Server",
-          tabBarIcon: ({ color, size }) => (
-            <Icon name="server-network" color={color} size={size} />
-          ),
-        }}
+        name="hunting"
+        options={{ title: "Hunting", tabBarIcon: ({ color, size }) => <Icon name="target" color={color} size={size} /> }}
       />
       <Tabs.Screen
-        name="config"
-        options={{
-          title: "Config",
-          tabBarIcon: ({ color, size }) => (
-            <Icon name="tune-vertical" color={color} size={size} />
-          ),
-        }}
+        name="cekip"
+        options={{ title: "Cek IP", tabBarIcon: ({ color, size }) => <Icon name="web" color={color} size={size} /> }}
       />
       <Tabs.Screen
-        name="log"
-        options={{
-          title: "Log",
-          tabBarIcon: ({ color, size }) => (
-            <Icon name="console" color={color} size={size} />
-          ),
-        }}
+        name="riwayat"
+        options={{ title: "Riwayat", tabBarIcon: ({ color, size }) => <Icon name="history" color={color} size={size} /> }}
       />
     </Tabs>
   );
 }
 
 const useStyles = makeStyles((colors) => ({
+  loading: { flex: 1, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
   tabBar: {
     backgroundColor: colors.surfaceSecondary,
     borderTopColor: colors.border,

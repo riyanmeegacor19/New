@@ -1,83 +1,69 @@
+import { storage } from "@/src/utils/storage";
+
 const BASE = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`;
+export const TOKEN_KEY = "riyanmee_token";
 
-export type Protocol = "ssh" | "socks5" | "http";
+export type HuntMode = "ultimate" | "full" | "city" | "isp";
 
-export type ServerT = {
+export type UserT = {
   id: string;
-  name: string;
-  host: string;
-  port: number;
-  protocol: Protocol;
-  location: string;
   username: string;
-  password: string;
-  is_builtin: boolean;
-  last_ping_ms: number | null;
-  last_ping_at: string | null;
-  last_status: "online" | "offline" | "unknown";
-  created_at: string;
+  tier: string;
+  server_host: string;
+  server_port: number;
+  proxy_password: string;
+  whitelist_ips: string[];
+  traffic_bytes: number;
+  total_pool: string;
+  expires_at: string | null;
+  created_at: string | null;
 };
 
-export type SessionT = {
-  id: string;
-  state: "disconnected" | "connecting" | "connected";
-  server_id: string | null;
-  server_name: string;
-  connected_at: string | null;
-  banner: string;
-  ping_ms: number | null;
-  error: string;
+export type AuthResp = { access_token: string; token_type: string; user: UserT };
+
+export type GeoT = {
+  ip: string;
+  success: boolean;
+  country: string;
+  country_code: string;
+  region: string;
+  city: string;
+  isp: string;
+  asn: string;
+  latitude: number | null;
+  longitude: number | null;
+  timezone: string;
 };
 
-export type SessionResp = { session: SessionT; server: ServerT | null };
+export type ProxyResultT = {
+  ip: string;
+  port: number;
+  country: string;
+  country_code: string;
+  city: string;
+  isp: string;
+  asn: string;
+  latency_ms: number;
+  type: string;
+  match?: string;
+};
 
-export type LogT = {
+export type HuntResp = {
+  target: GeoT;
+  mode: HuntMode;
+  mode_label: string;
+  count: number;
+  results: ProxyResultT[];
+};
+
+export type HistoryT = {
   id: string;
   ts: string;
-  level: "info" | "success" | "warn" | "error";
-  tag: string;
-  message: string;
-};
-
-export type ConfigT = {
-  id: string;
-  name: string;
-  protocol: Protocol;
-  host: string;
-  port: number;
-  username: string;
-  password: string;
-  payload: string;
-  created_at: string;
-  updated_at: string;
-};
-
-export type IpCheckT = {
-  direct_ip: string;
-  direct_country: string;
-  direct_isp: string;
-  proxy_server?: string;
-  proxy_ip?: string;
-  proxy_country?: string;
-  proxy_isp?: string;
-  spoofed?: boolean;
-  proxy_error?: string;
-  note?: string;
-};
-
-export type SpeedT = {
-  mbps: number;
-  bytes: number;
-  seconds: number;
-  via_proxy: boolean;
-  server_name: string | null;
-};
-
-export type ToolHistoryT = {
-  id: string;
-  kind: "ip" | "speed";
-  ts: string;
-  data: IpCheckT | SpeedT;
+  kind: "hunt" | "ipinfo" | "connect";
+  title: string;
+  subtitle: string;
+  ip: string;
+  mode: string;
 };
 
 export class ApiError extends Error {}
@@ -87,15 +73,24 @@ export async function api<T>(
   init?: Omit<RequestInit, "body"> & { json?: unknown },
 ): Promise<T> {
   const { json, ...rest } = init ?? {};
+  const token = await storage.secureGet<string>(TOKEN_KEY, "");
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
       ...rest,
-      headers: { "Content-Type": "application/json", ...(rest.headers ?? {}) },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(rest.headers ?? {}),
+      },
       body: json !== undefined ? JSON.stringify(json) : rest.body,
     });
   } catch {
     throw new ApiError("Tidak dapat menghubungi server RIYANMEE. Periksa koneksi internet Anda.");
+  }
+  if (res.status === 401) {
+    await storage.secureRemove(TOKEN_KEY);
+    throw new ApiError("Sesi berakhir, silakan login kembali");
   }
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
@@ -103,18 +98,16 @@ export async function api<T>(
       const body = await res.json();
       if (typeof body.detail === "string") detail = body.detail;
     } catch {
-      // keep default detail
+      // keep default
     }
     throw new ApiError(detail);
   }
   return res.json() as Promise<T>;
 }
 
-export const fetchSession = () => api<SessionResp>("/session");
-
-export function pingColor(ms: number | null | undefined, status: string, colors: { brandPrimary: string; warning: string; error: string; muted: string }) {
-  if (status === "offline" || ms == null) return colors.error;
-  if (ms < 150) return colors.brandPrimary;
-  if (ms < 400) return colors.warning;
-  return colors.error;
+export function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 MB";
+  const mb = bytes / (1024 * 1024);
+  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+  return `${(mb / 1024).toFixed(2)} GB`;
 }
