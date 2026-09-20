@@ -8,6 +8,7 @@ import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TextIn
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, HuntMode, HuntResp, ProxyResultT } from "@/src/api";
+import { useAuth } from "@/src/auth";
 import { useToast } from "@/src/components/toast";
 import { useT } from "@/src/settings";
 import { font, makeStyles, mono, radius, spacing, useTheme } from "@/src/theme";
@@ -19,6 +20,7 @@ export default function HuntingScreen() {
   const toast = useToast();
   const t = useT();
   const qc = useQueryClient();
+  const { user } = useAuth();
 
   const MODES: { value: HuntMode; label: string; desc: string }[] = [
     { value: "ultimate", label: t("mode_ultimate"), desc: t("mode_ultimate_desc") },
@@ -31,6 +33,7 @@ export default function HuntingScreen() {
   const [mode, setMode] = useState<HuntMode>("ultimate");
   const [modeOpen, setModeOpen] = useState(false);
   const [result, setResult] = useState<HuntResp | null>(null);
+  const [connected, setConnected] = useState<ProxyResultT | null>(null);
 
   const huntMut = useMutation({
     mutationFn: () => api<HuntResp>("/hunt", { method: "POST", json: { target_ip: targetIp.trim(), mode } }),
@@ -142,19 +145,21 @@ export default function HuntingScreen() {
             </View>
 
             {result.results.map((p, idx) => (
-              <Pressable key={`${p.ip}:${p.port}:${idx}`} testID={`proxy-item-${idx}`} onPress={() => copyOne(p)} style={styles.proxyRow}>
-                <View style={styles.flex1}>
+              <View key={`${p.ip}:${p.port}:${idx}`} testID={`proxy-item-${idx}`} style={styles.proxyRow}>
+                <Pressable style={styles.flex1} onPress={() => copyOne(p)}>
                   <Text style={styles.proxyIp}>{p.ip}<Text style={styles.proxyPort}>:{p.port}</Text></Text>
                   <Text style={styles.proxyMeta} numberOfLines={1}>{[p.city, p.country].filter(Boolean).join(", ")} · {p.isp}</Text>
-                </View>
-                <View style={styles.proxyRight}>
-                  <View style={[styles.typeBadge, { borderColor: p.owned ? colors.borderStrong : colors.border, backgroundColor: p.owned ? colors.brandTertiary : "transparent" }]}>
-                    <Text style={[styles.typeText, { color: p.owned ? colors.onBrandTertiary : colors.onSurfaceTertiary }]}>{p.owned ? t("owned_badge") : p.type}</Text>
+                  <View style={styles.proxyBadges}>
+                    <View style={[styles.typeBadge, { borderColor: p.owned ? colors.borderStrong : colors.border, backgroundColor: p.owned ? colors.brandTertiary : "transparent" }]}>
+                      <Text style={[styles.typeText, { color: p.owned ? colors.onBrandTertiary : colors.onSurfaceTertiary }]}>{p.owned ? t("owned_badge") : p.type}</Text>
+                    </View>
+                    <Text style={styles.latency}>{p.latency_ms}ms</Text>
                   </View>
-                  <Text style={styles.latency}>{p.latency_ms}ms</Text>
-                </View>
-                <Icon name="content-copy" size={18} color={colors.muted} />
-              </Pressable>
+                </Pressable>
+                <Pressable testID={`proxy-connect-${idx}`} onPress={() => setConnected(p)} style={styles.connectBtn}>
+                  <Text style={styles.connectText}>{t("connect")}</Text>
+                </Pressable>
+              </View>
             ))}
           </View>
         ) : (
@@ -182,6 +187,47 @@ export default function HuntingScreen() {
             })}
           </View>
         </Pressable>
+      </Modal>
+
+      <Modal visible={!!connected} transparent animationType="fade" onRequestClose={() => setConnected(null)}>
+        <View style={styles.modalBackdrop}>
+          <View testID="connect-success-modal" style={styles.successCard}>
+            <View style={styles.successIcon}>
+              <Icon name="check" size={40} color={colors.onBrandPrimary} />
+            </View>
+            <Text style={styles.successTitle}>{t("success")}</Text>
+
+            {connected ? (
+              <View style={styles.successBox}>
+                <View style={styles.sRow}>
+                  <Text style={styles.sKey}>{t("ip_proxy")}:</Text>
+                  <Text testID="success-ip" style={styles.sVal}>{connected.ip}</Text>
+                </View>
+                <View style={styles.sRow}>
+                  <Text style={styles.sKey}>{t("location_label")}:</Text>
+                  <Text style={styles.sVal}>{[connected.city, connected.country_code || connected.country].filter(Boolean).join(", ")}</Text>
+                </View>
+                <View style={styles.sRow}>
+                  <Text style={styles.sKey}>{t("asn_label")}:</Text>
+                  <Text style={styles.sVal} numberOfLines={1}>{connected.asn || connected.isp}</Text>
+                </View>
+                <View style={styles.sRow}>
+                  <Text style={styles.sKey}>{t("server_label")}:</Text>
+                  <Text style={styles.sVal} numberOfLines={1}>{user?.server_host}</Text>
+                </View>
+                <View style={styles.sDivider} />
+                <View style={styles.sRow}>
+                  <Text style={styles.sKey}>{t("port_label")}:</Text>
+                  <Text style={[styles.sVal, styles.sPort]}>{user?.server_port}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            <Pressable testID="success-ok-button" onPress={() => setConnected(null)} style={styles.okBtn}>
+              <Text style={styles.okText}>{t("ok")}</Text>
+            </Pressable>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -213,10 +259,23 @@ const useStyles = makeStyles((colors) => ({
   proxyIp: { color: colors.onSurface, fontSize: font.base, fontFamily: mono, fontWeight: "700" },
   proxyPort: { color: colors.brandPrimary },
   proxyMeta: { color: colors.onSurfaceTertiary, fontSize: font.sm, marginTop: 2 },
-  proxyRight: { alignItems: "flex-end", gap: 4 },
+  proxyBadges: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },
+  connectBtn: { height: 40, paddingHorizontal: spacing.lg, borderRadius: radius.md, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center" },
+  connectText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: "800", letterSpacing: 1 },
   typeBadge: { borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2 },
   typeText: { fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
   latency: { color: colors.muted, fontSize: 11, fontFamily: mono },
+  successCard: { width: "100%", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.xl, alignItems: "center" },
+  successIcon: { width: 72, height: 72, borderRadius: 36, borderWidth: 2, borderColor: colors.brandPrimary, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center", marginBottom: spacing.md },
+  successTitle: { color: colors.onSurface, fontSize: 26, fontWeight: "800", marginBottom: spacing.lg },
+  successBox: { width: "100%", borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.lg, gap: spacing.sm },
+  sRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
+  sKey: { color: colors.onSurfaceTertiary, fontSize: font.sm, fontFamily: mono },
+  sVal: { color: colors.onSurface, fontSize: font.sm, fontFamily: mono, fontWeight: "700", flexShrink: 1, textAlign: "right" },
+  sPort: { color: colors.brandPrimary, fontSize: font.lg },
+  sDivider: { height: 1, backgroundColor: colors.divider, marginVertical: 2 },
+  okBtn: { marginTop: spacing.lg, minWidth: 120, height: 48, borderRadius: radius.md, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center" },
+  okText: { color: colors.onBrandPrimary, fontSize: font.base, fontWeight: "800", letterSpacing: 1 },
   emptyCard: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.lg, padding: spacing.xxl, alignItems: "center", gap: spacing.md },
   emptyText: { color: colors.onSurfaceTertiary, fontSize: font.base, textAlign: "center" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center", padding: spacing.lg },
