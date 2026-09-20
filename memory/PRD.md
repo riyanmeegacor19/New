@@ -34,4 +34,5 @@ User (Bahasa Indonesia) meminta aplikasi proxy bergaya "HN Proxy V1", lalu membe
 - **P2**: Integrasi server proxy nyata milik user (host/port/user/pass) bila user menyediakan.
 
 ## Next Tasks
-- Tunggu feedback user untuk fitur lanjutan (pembelian/langganan, export, dsb.)
+- Iterasi 5: Riwayat Pembelian (GET /api/purchases + layar /pembelian) & Ekspor Server (tombol EKSPOR di /servers -> txt/share). Harga paket: 7h Rp150k, 30h Rp500k (populer), 90h Rp1.4jt.
+- Tunggu feedback user untuk fitur lanjutan (pembayaran nyata/QRIS, diskon paket, dsb.)

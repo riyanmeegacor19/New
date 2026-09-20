@@ -30,6 +30,7 @@ export default function RootLayout() {
                   <Stack.Screen name="(tabs)" />
                   <Stack.Screen name="servers" />
                   <Stack.Screen name="langganan" />
+                  <Stack.Screen name="pembelian" />
                 </Stack>
               </AuthProvider>
             </ToastProvider>

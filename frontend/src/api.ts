@@ -71,6 +71,17 @@ export type PlanT = {
   features: string[];
 };
 
+export type PurchaseT = {
+  id: string;
+  plan_id: string;
+  plan_name: string;
+  days: number;
+  price: number;
+  price_label: string;
+  ts: string;
+  expires_at: string;
+};
+
 export type HuntResp = {
   target: GeoT;
   mode: HuntMode;

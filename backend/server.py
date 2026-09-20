@@ -600,8 +600,38 @@ async def activate_subscription(body: ActivateIn, user: Annotated[UserDoc, Depen
             subtitle=f"+{plan['days']} hari · {plan['price_label']}",
         ).to_mongo()
     )
+    await db.purchases.insert_one(
+        {
+            "user_id": str(user.id),
+            "plan_id": plan["id"],
+            "plan_name": plan["name"],
+            "days": plan["days"],
+            "price": plan["price"],
+            "price_label": plan["price_label"],
+            "expires_at": new_expiry,
+            "ts": now,
+        }
+    )
     fresh = UserDoc.from_mongo(await db.users.find_one({"_id": ObjectId(user.id)}))
     return public_user(fresh)
+
+
+@api_router.get("/purchases")
+async def get_purchases(user: Annotated[UserDoc, Depends(current_user)]):
+    docs = await db.purchases.find({"user_id": str(user.id)}).sort("ts", -1).limit(50).to_list(50)
+    return [
+        {
+            "id": str(d["_id"]),
+            "plan_id": d.get("plan_id", ""),
+            "plan_name": d.get("plan_name", ""),
+            "days": d.get("days", 0),
+            "price": d.get("price", 0),
+            "price_label": d.get("price_label", ""),
+            "ts": d["ts"].isoformat() if isinstance(d.get("ts"), datetime) else d.get("ts"),
+            "expires_at": d["expires_at"].isoformat() if isinstance(d.get("expires_at"), datetime) else d.get("expires_at"),
+        }
+        for d in docs
+    ]
 
 
 app.include_router(api_router)

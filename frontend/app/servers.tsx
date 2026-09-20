@@ -1,8 +1,11 @@
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as Clipboard from "expo-clipboard";
+import { File, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -47,6 +50,38 @@ export default function ServersScreen() {
     onError: (e: Error) => toast.show(e.message, "error"),
   });
 
+  const exportServers = async () => {
+    const list = proxiesQ.data ?? [];
+    if (!list.length) {
+      toast.show(t("no_servers_export"), "error");
+      return;
+    }
+    const body = list
+      .map((p) => {
+        const auth = p.username ? `${p.username}@` : "";
+        return `${p.label} | ${p.protocol}://${auth}${p.host}:${p.port}`;
+      })
+      .join("\n");
+    try {
+      if (Platform.OS === "web") {
+        await Clipboard.setStringAsync(body);
+        toast.show(t("servers_exported"), "success");
+        return;
+      }
+      const file = new File(Paths.cache, `riyanmee_servers_${Date.now()}.txt`);
+      file.create({ overwrite: true });
+      file.write(body);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(file.uri, { mimeType: "text/plain", dialogTitle: "Export Server" });
+      } else {
+        await Clipboard.setStringAsync(body);
+      }
+      toast.show(t("servers_exported"), "success");
+    } catch {
+      toast.show(t("export_failed"), "error");
+    }
+  };
+
   return (
     <View style={styles.screen}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
@@ -57,6 +92,10 @@ export default function ServersScreen() {
           <Text style={styles.title}>{t("servers_title")}</Text>
           <Text style={styles.subtitle}>{t("servers_sub")}</Text>
         </View>
+        <Pressable testID="export-servers-button" onPress={exportServers} style={styles.exportBtn} hitSlop={8}>
+          <Icon name="file-download-outline" size={18} color={colors.onBrandTertiary} />
+          <Text style={styles.exportText}>{t("export_servers")}</Text>
+        </Pressable>
         <Pressable testID="add-server-button" onPress={() => setModal(true)} style={styles.addBtn} hitSlop={8}>
           <Icon name="plus" size={24} color={colors.onBrandPrimary} />
         </Pressable>
@@ -162,6 +201,8 @@ const useStyles = makeStyles((colors) => ({
   title: { color: colors.onSurface, fontSize: font.xl, fontWeight: "800", letterSpacing: 1 },
   subtitle: { color: colors.muted, fontSize: font.sm, marginTop: 2 },
   addBtn: { width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center" },
+  exportBtn: { flexDirection: "row", alignItems: "center", gap: spacing.xs, height: 44, paddingHorizontal: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.brandTertiary, marginRight: spacing.sm },
+  exportText: { color: colors.onBrandTertiary, fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.md },
   card: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.lg, padding: spacing.lg },
   protoDot: { width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center" },
