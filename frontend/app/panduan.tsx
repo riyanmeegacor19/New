@@ -107,54 +107,76 @@ export default function PanduanScreen() {
           </Text>
         </Step>
 
-        <Step n={2} title="Masuk ke VPS via SSH">
-          <Text style={styles.p}>Dari komputer, buka Terminal/PowerShell lalu ganti IP_VPS dengan IP Anda:</Text>
-          <CodeBlock code={"ssh root@IP_VPS"} />
-          <Text style={styles.hint}>Masukkan password saat diminta. Untuk Windows bisa pakai aplikasi Termius/PuTTY.</Text>
+        <Step n={2} title="Masuk ke VPS (Termius) & jadi root">
+          <Text style={styles.p}>Di Termius, tambah host: Address = IP VPS, Username & Password dari dashboard penyedia (Vultr kadang pakai user linuxuser, bukan root). Setelah masuk, jadikan root:</Text>
+          <CodeBlock code={"sudo -i"} />
+          <Text style={styles.hint}>Jika diminta password, ketik password login VPS Anda. Tanda berubah jadi root@... berarti berhasil.</Text>
         </Step>
 
         <Step n={3} title="Install 3proxy">
-          <Text style={styles.p}>Salin dan jalankan perintah ini satu per satu:</Text>
+          <Text style={styles.p}>Salin & jalankan tiap blok satu per satu, tunggu selesai:</Text>
           <CodeBlock code={"apt update && apt install -y build-essential wget"} />
-          <CodeBlock code={"wget https://github.com/3proxy/3proxy/archive/refs/tags/0.9.4.tar.gz"} />
-          <CodeBlock code={"tar -xzf 0.9.4.tar.gz && cd 3proxy-0.9.4"} />
+          <CodeBlock code={"cd /root && wget https://github.com/3proxy/3proxy/archive/refs/tags/0.9.4.tar.gz && tar -xzf 0.9.4.tar.gz && cd 3proxy-0.9.4"} />
           <CodeBlock code={"make -f Makefile.Linux && make -f Makefile.Linux install"} />
         </Step>
 
-        <Step n={4} title="Buat konfigurasi + akun">
-          <Text style={styles.p}>Buat file konfigurasi (ganti riyan & passwordkuat dengan milik Anda):</Text>
-          <CodeBlock code={"nano /etc/3proxy/3proxy.cfg"} />
-          <Text style={styles.p}>Isi dengan:</Text>
+        <Step n={4} title="Buat konfigurasi + akun proxy">
+          <Text style={styles.p}>Salin blok ini utuh (ganti riyan & Riyan12345 sesuka Anda). Ini otomatis membuat file konfigurasi tanpa perlu nano:</Text>
           <CodeBlock
             code={
+              "cat >/etc/3proxy.cfg <<'EOF'\n" +
               "nserver 8.8.8.8\n" +
               "nscache 65536\n" +
               "timeouts 1 5 30 60 180 1800 15 60\n" +
-              "users riyan:CL:passwordkuat\n" +
+              "users riyan:CL:Riyan12345\n" +
               "auth strong\n" +
               "allow riyan\n" +
               "socks -p1080\n" +
               "proxy -p8080\n" +
-              "flush"
+              "flush\n" +
+              "EOF"
             }
           />
-          <Text style={styles.hint}>Simpan di nano: tekan Ctrl+O lalu Enter, keluar Ctrl+X.</Text>
         </Step>
 
-        <Step n={5} title="Jalankan & buka firewall">
-          <CodeBlock code={"ufw allow 1080/tcp && ufw allow 8080/tcp"} />
-          <CodeBlock code={"systemctl enable 3proxy && systemctl restart 3proxy"} />
-          <Text style={styles.hint}>Cek status: systemctl status 3proxy (harus active/running).</Text>
+        <Step n={5} title="Buat service & jalankan">
+          <Text style={styles.p}>Cari lokasi program lalu buat service otomatis:</Text>
+          <CodeBlock code={"BIN=$(command -v 3proxy || echo /usr/local/bin/3proxy); echo $BIN"} />
+          <CodeBlock
+            code={
+              "cat >/etc/systemd/system/3proxy.service <<EOF\n" +
+              "[Unit]\n" +
+              "Description=3proxy\n" +
+              "After=network.target\n" +
+              "[Service]\n" +
+              "ExecStart=$BIN /etc/3proxy.cfg\n" +
+              "Restart=always\n" +
+              "[Install]\n" +
+              "WantedBy=multi-user.target\n" +
+              "EOF"
+            }
+          />
+          <CodeBlock code={"systemctl daemon-reload && systemctl enable --now 3proxy && systemctl status 3proxy --no-pager"} />
+          <Text style={styles.hint}>Jika muncul active (running) hijau, proxy sudah berjalan. (Vultr default tanpa firewall; jika pakai ufw: ufw allow 1080/tcp && ufw allow 8080/tcp)</Text>
         </Step>
 
         <Step n={6} title="Sambungkan ke RIYANMEE PROXY">
           <Text style={styles.p}>Buka menu Sambung Gateway di aplikasi, lalu isi:</Text>
-          <View style={styles.kv}><Text style={styles.k}>Host</Text><Text style={styles.v}>IP_VPS Anda</Text></View>
+          <View style={styles.kv}><Text style={styles.k}>Host</Text><Text style={styles.v}>IP VPS Anda</Text></View>
           <View style={styles.kv}><Text style={styles.k}>Port</Text><Text style={styles.v}>1080 (SOCKS5) / 8080 (HTTP)</Text></View>
           <View style={styles.kv}><Text style={styles.k}>Protokol</Text><Text style={styles.v}>SOCKS5</Text></View>
           <View style={styles.kv}><Text style={styles.k}>Username</Text><Text style={styles.v}>riyan</Text></View>
-          <View style={styles.kv}><Text style={styles.k}>Password</Text><Text style={styles.v}>passwordkuat</Text></View>
+          <View style={styles.kv}><Text style={styles.k}>Password</Text><Text style={styles.v}>Riyan12345</Text></View>
           <Text style={styles.hint}>Tekan SIMPAN & TES KONEKSI. Bila muncul ONLINE, gateway siap dipakai di tombol HUBUNGKAN.</Text>
+        </Step>
+
+        <Step n={7} title="Selesai — lalu ke mana?">
+          <Text style={styles.p}>Setelah langkah 5 menunjukkan active (running), pekerjaan di VPS SELESAI. Anda boleh:</Text>
+          <Text style={styles.li}>• Tutup / keluar dari Termius (ketik exit lalu Enter, atau tap X). Proxy tetap jalan 24 jam di VPS meski Termius ditutup.</Text>
+          <Text style={styles.li}>• Kembali ke aplikasi RIYANMEE PROXY.</Text>
+          <Text style={styles.li}>• Buka Sambung Gateway (tombol di bawah), isi data langkah 6, tap SIMPAN & TES KONEKSI.</Text>
+          <Text style={styles.li}>• Buka tab Hunting → cari IP → tap HUBUNGKAN → kredensial gateway Anda muncul & bisa disalin.</Text>
+          <Text style={styles.hint}>Tips keamanan: setelah selesai, ganti password login VPS Anda di dashboard penyedia.</Text>
         </Step>
 
         <Pressable testID="panduan-goto-gateway" onPress={() => router.replace("/gateway")} style={styles.cta}>
