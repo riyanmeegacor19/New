@@ -46,6 +46,29 @@ export type ProxyResultT = {
   latency_ms: number;
   type: string;
   match?: string;
+  owned?: boolean;
+  label?: string;
+};
+
+export type MyProxyT = {
+  id: string;
+  label: string;
+  host: string;
+  port: number;
+  username: string;
+  protocol: string;
+  created_at: string;
+};
+
+export type PlanT = {
+  id: string;
+  name: string;
+  days: number;
+  price: number;
+  price_label: string;
+  tier: string;
+  popular: boolean;
+  features: string[];
 };
 
 export type HuntResp = {

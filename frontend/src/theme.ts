@@ -1,23 +1,13 @@
-// Design tokens for this app. Dark-first tactical palette (RIYANMEE PROXY).
-//
-// The keys match the "color" block of /app/design_guidelines.json. The app is
-// dark-only, so both schemes carry the same obsidian + neon green palette.
-//
-// Styling a screen or component: build the sheet with makeStyles so colors
-// and layout live together:
-//   const useStyles = makeStyles((colors) => ({
-//     card: { backgroundColor: colors.surfaceSecondary, padding: 16 },
-//   }));
-// For color props that are not styles (icon color, placeholderTextColor,
-// ActivityIndicator) read useTheme().colors inside the component.
+// Design tokens for RIYANMEE PROXY. Dark neon-green primary + a clean light
+// theme. Keys match the "color" block of design_guidelines.json. Theme is
+// switchable at runtime via Appearance.setColorScheme (see src/settings.tsx).
 
 import { useMemo } from "react";
 import { Appearance, Platform, StyleSheet, useColorScheme } from "react-native";
 
 export type ColorScheme = "light" | "dark";
 
-const palette = {
-  // Surfaces
+const dark = {
   surface: "#0A0F0D",
   onSurface: "#E2ECE6",
   surfaceSecondary: "#121A16",
@@ -28,7 +18,6 @@ const palette = {
   onSurfaceInverse: "#0A0F0D",
   muted: "#7A9988",
 
-  // Brand
   brand: "#00FF66",
   onBrand: "#0A0F0D",
   brandPrimary: "#00FF66",
@@ -38,7 +27,6 @@ const palette = {
   brandTertiary: "rgba(0, 255, 102, 0.12)",
   onBrandTertiary: "#00FF66",
 
-  // Status
   success: "#00FF66",
   onSuccess: "#0A0F0D",
   warning: "#FFB800",
@@ -48,16 +36,46 @@ const palette = {
   info: "#00E5FF",
   onInfo: "#0A0F0D",
 
-  // Lines
   border: "rgba(0, 255, 102, 0.2)",
   borderStrong: "#00FF66",
   divider: "rgba(255, 255, 255, 0.08)",
 };
 
-const light = palette;
-const dark = palette;
+const light: typeof dark = {
+  surface: "#F3F7F4",
+  onSurface: "#0A1F14",
+  surfaceSecondary: "#FFFFFF",
+  onSurfaceSecondary: "#16281F",
+  surfaceTertiary: "#E7EFEA",
+  onSurfaceTertiary: "#4A6B58",
+  surfaceInverse: "#0A0F0D",
+  onSurfaceInverse: "#E2ECE6",
+  muted: "#5E7A6B",
 
-export type ThemeColors = typeof palette;
+  brand: "#00A344",
+  onBrand: "#FFFFFF",
+  brandPrimary: "#00A344",
+  onBrandPrimary: "#FFFFFF",
+  brandSecondary: "#00CC52",
+  onBrandSecondary: "#062B15",
+  brandTertiary: "rgba(0, 163, 68, 0.12)",
+  onBrandTertiary: "#007A33",
+
+  success: "#00A344",
+  onSuccess: "#FFFFFF",
+  warning: "#B26A00",
+  onWarning: "#FFFFFF",
+  error: "#C42B36",
+  onError: "#FFFFFF",
+  info: "#0077A3",
+  onInfo: "#FFFFFF",
+
+  border: "rgba(0, 163, 68, 0.25)",
+  borderStrong: "#00A344",
+  divider: "rgba(0, 0, 0, 0.08)",
+};
+
+export type ThemeColors = typeof dark;
 
 export const defaultScheme: ColorScheme = "dark";
 
@@ -84,30 +102,7 @@ export function makeStyles<T extends StyleSheet.NamedStyles<T> | StyleSheet.Name
   };
 }
 
-// ---- Layout tokens (from design_guidelines.json) --------------------------
-export const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  xxl: 32,
-  xxxl: 48,
-};
-
-export const radius = {
-  sm: 6,
-  md: 12,
-  lg: 20,
-  pill: 999,
-};
-
-export const font = {
-  sm: 12,
-  base: 14,
-  lg: 16,
-  xl: 20,
-  xxl: 24,
-};
-
+export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 };
+export const radius = { sm: 6, md: 12, lg: 20, pill: 999 };
+export const font = { sm: 12, base: 14, lg: 16, xl: 20, xxl: 24 };
 export const mono = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) as string;

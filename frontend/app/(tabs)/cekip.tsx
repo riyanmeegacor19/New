@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, GeoT } from "@/src/api";
 import { useToast } from "@/src/components/toast";
+import { useT } from "@/src/settings";
 import { usesNativeTabs } from "@/src/navigation";
 import { font, makeStyles, mono, radius, spacing, useTheme } from "@/src/theme";
 
@@ -14,6 +15,7 @@ export default function CekIpScreen() {
   const styles = useStyles();
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  const t = useT();
   const qc = useQueryClient();
 
   const [ip, setIp] = useState("");
@@ -24,22 +26,22 @@ export default function CekIpScreen() {
     onSuccess: (r) => {
       setResult(r);
       qc.invalidateQueries({ queryKey: ["history"] });
-      toast.show("Informasi IP ditemukan", "success");
+      toast.show(t("ip_found"), "success");
     },
     onError: (e: Error) => toast.show(e.message, "error"),
   });
 
   const rows: { label: string; value: string }[] = result
     ? [
-        { label: "IP", value: result.ip },
-        { label: "Negara", value: [result.country, result.country_code].filter(Boolean).join(" · ") },
-        { label: "Wilayah", value: result.region || "—" },
-        { label: "Kota", value: result.city || "—" },
-        { label: "ISP", value: result.isp || "—" },
-        { label: "ASN", value: result.asn || "—" },
-        { label: "Zona Waktu", value: result.timezone || "—" },
+        { label: t("f_ip"), value: result.ip },
+        { label: t("f_country"), value: [result.country, result.country_code].filter(Boolean).join(" · ") },
+        { label: t("f_region"), value: result.region || "—" },
+        { label: t("f_city"), value: result.city || "—" },
+        { label: t("f_isp"), value: result.isp || "—" },
+        { label: t("f_asn"), value: result.asn || "—" },
+        { label: t("f_tz"), value: result.timezone || "—" },
         {
-          label: "Koordinat",
+          label: t("f_coord"),
           value:
             result.latitude != null && result.longitude != null
               ? `${result.latitude}, ${result.longitude}`
@@ -53,8 +55,8 @@ export default function CekIpScreen() {
   return (
     <View style={styles.screen}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-        <Text style={styles.title}>Cek Informasi IP</Text>
-        <Text style={styles.subtitle}>Lacak negara, kota & ISP dari sebuah IP</Text>
+        <Text style={styles.title}>{t("cekip_title")}</Text>
+        <Text style={styles.subtitle}>{t("cekip_sub")}</Text>
       </View>
 
       <ScrollView
@@ -63,7 +65,7 @@ export default function CekIpScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.card}>
-          <Text style={styles.label}>ALAMAT IP</Text>
+          <Text style={styles.label}>{t("ip_address")}</Text>
           <TextInput
             testID="cekip-input"
             style={styles.input}
@@ -78,7 +80,7 @@ export default function CekIpScreen() {
             testID="cekip-button"
             onPress={() => {
               if (!ip.trim()) {
-                toast.show("Masukkan alamat IP dulu", "error");
+                toast.show(t("fill_ip"), "error");
                 return;
               }
               checkMut.mutate();
@@ -89,7 +91,7 @@ export default function CekIpScreen() {
             {checkMut.isPending ? (
               <ActivityIndicator color={colors.onSuccess} />
             ) : (
-              <Text style={styles.checkText}>CEK IP</Text>
+              <Text style={styles.checkText}>{t("check_ip")}</Text>
             )}
           </Pressable>
         </View>
@@ -98,7 +100,7 @@ export default function CekIpScreen() {
           <View testID="cekip-result" style={styles.card}>
             <View style={styles.resultHead}>
               <Icon name="map-marker-radius" size={20} color={colors.brandPrimary} />
-              <Text style={styles.resultTitle}>HASIL PELACAKAN</Text>
+              <Text style={styles.resultTitle}>{t("track_result")}</Text>
             </View>
             {rows.map((r) => (
               <View key={r.label} style={styles.row}>
@@ -110,9 +112,7 @@ export default function CekIpScreen() {
         ) : (
           <View style={styles.emptyCard}>
             <Icon name="web" size={40} color={colors.muted} />
-            <Text style={styles.emptyText}>
-              Masukkan alamat IP untuk melihat detail lokasi dan penyedia layanan.
-            </Text>
+            <Text style={styles.emptyText}>{t("cekip_empty")}</Text>
           </View>
         )}
       </ScrollView>

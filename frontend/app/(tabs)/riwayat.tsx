@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, HistoryT } from "@/src/api";
 import { useToast } from "@/src/components/toast";
+import { useT } from "@/src/settings";
 import { usesNativeTabs } from "@/src/navigation";
 import { font, makeStyles, mono, radius, spacing, useTheme } from "@/src/theme";
 
@@ -25,6 +26,7 @@ export default function RiwayatScreen() {
   const styles = useStyles();
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  const t = useT();
   const qc = useQueryClient();
 
   const historyQ = useQuery({
@@ -37,7 +39,7 @@ export default function RiwayatScreen() {
     mutationFn: () => api("/history", { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["history"] });
-      toast.show("Riwayat dibersihkan", "info");
+      toast.show(t("history_cleared"), "info");
     },
     onError: (e: Error) => toast.show(e.message, "error"),
   });
@@ -48,8 +50,8 @@ export default function RiwayatScreen() {
     <View style={styles.screen}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
         <View style={styles.flex1}>
-          <Text style={styles.title}>Riwayat Koneksi</Text>
-          <Text style={styles.subtitle}>{historyQ.data?.length ?? 0} aktivitas tercatat</Text>
+          <Text style={styles.title}>{t("history_title")}</Text>
+          <Text style={styles.subtitle}>{historyQ.data?.length ?? 0} {t("activities_logged")}</Text>
         </View>
         <Pressable testID="riwayat-clear-button" onPress={() => clearMut.mutate()} style={styles.iconBtn} hitSlop={8}>
           <Icon name="delete-outline" size={22} color={colors.error} />
@@ -67,9 +69,7 @@ export default function RiwayatScreen() {
         ListEmptyComponent={
           <View testID="history-empty" style={styles.empty}>
             <Icon name="history" size={40} color={colors.muted} />
-            <Text style={styles.emptyText}>
-              Belum ada riwayat. Lakukan pencarian proxy atau cek IP untuk mulai mencatat aktivitas.
-            </Text>
+            <Text style={styles.emptyText}>{t("history_empty")}</Text>
           </View>
         }
         renderItem={({ item }) => (

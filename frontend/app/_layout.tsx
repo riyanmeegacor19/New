@@ -7,6 +7,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { ToastProvider } from "@/src/components/toast";
 import { AuthProvider } from "@/src/auth";
+import { SettingsProvider } from "@/src/settings";
 import { queryClient } from "@/src/query-client";
 
 // Disable logbox errors etc so that users can see the app
@@ -18,17 +19,21 @@ export default function RootLayout() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <KeyboardProvider>
-          <ToastProvider>
-            <AuthProvider>
-              <StatusBar style="light" />
-              <Stack screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="index" />
-                <Stack.Screen name="login" />
-                <Stack.Screen name="register" />
-                <Stack.Screen name="(tabs)" />
-              </Stack>
-            </AuthProvider>
-          </ToastProvider>
+          <SettingsProvider>
+            <ToastProvider>
+              <AuthProvider>
+                <StatusBar style="auto" />
+                <Stack screenOptions={{ headerShown: false }}>
+                  <Stack.Screen name="index" />
+                  <Stack.Screen name="login" />
+                  <Stack.Screen name="register" />
+                  <Stack.Screen name="(tabs)" />
+                  <Stack.Screen name="servers" />
+                  <Stack.Screen name="langganan" />
+                </Stack>
+              </AuthProvider>
+            </ToastProvider>
+          </SettingsProvider>
         </KeyboardProvider>
       </QueryClientProvider>
     </ErrorBoundary>

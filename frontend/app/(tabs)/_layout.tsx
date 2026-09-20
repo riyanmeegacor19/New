@@ -5,11 +5,13 @@ import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 
 import { useAuth } from "@/src/auth";
 import { usesNativeTabs } from "@/src/navigation";
+import { useT } from "@/src/settings";
 import { makeStyles, useTheme } from "@/src/theme";
 
 export default function TabsLayout() {
   const { colors } = useTheme();
   const styles = useStyles();
+  const t = useT();
   const { user, hydrated } = useAuth();
 
   if (!hydrated) {
@@ -26,19 +28,19 @@ export default function TabsLayout() {
       <NativeTabs>
         <NativeTabs.Trigger name="beranda">
           <NativeTabs.Trigger.Icon sf="person.crop.circle.fill" />
-          <NativeTabs.Trigger.Label>Beranda</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Label>{t("tab_home")}</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="hunting">
           <NativeTabs.Trigger.Icon sf="scope" />
-          <NativeTabs.Trigger.Label>Hunting</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Label>{t("tab_hunting")}</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="cekip">
           <NativeTabs.Trigger.Icon sf="globe" />
-          <NativeTabs.Trigger.Label>Cek IP</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Label>{t("tab_cekip")}</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="riwayat">
           <NativeTabs.Trigger.Icon sf="clock.fill" />
-          <NativeTabs.Trigger.Label>Riwayat</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Label>{t("tab_history")}</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
       </NativeTabs>
     );
@@ -57,19 +59,19 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="beranda"
-        options={{ title: "Beranda", tabBarIcon: ({ color, size }) => <Icon name="account-circle" color={color} size={size} /> }}
+        options={{ title: t("tab_home"), tabBarIcon: ({ color, size }) => <Icon name="account-circle" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="hunting"
-        options={{ title: "Hunting", tabBarIcon: ({ color, size }) => <Icon name="target" color={color} size={size} /> }}
+        options={{ title: t("tab_hunting"), tabBarIcon: ({ color, size }) => <Icon name="target" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="cekip"
-        options={{ title: "Cek IP", tabBarIcon: ({ color, size }) => <Icon name="web" color={color} size={size} /> }}
+        options={{ title: t("tab_cekip"), tabBarIcon: ({ color, size }) => <Icon name="web" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="riwayat"
-        options={{ title: "Riwayat", tabBarIcon: ({ color, size }) => <Icon name="history" color={color} size={size} /> }}
+        options={{ title: t("tab_history"), tabBarIcon: ({ color, size }) => <Icon name="history" color={color} size={size} /> }}
       />
     </Tabs>
   );

@@ -1,0 +1,55 @@
+{
+  "summary": "Iteration 4 covers 4 new features (Export TXT, My Proxies/Sambung Server Asli, Paket Langganan, I18N + Theme toggle). Backend: 10/10 pytest cases pass against preview URL — /api/plans returns all 4 plans (trial7/basic30/pro90/ultimate365), /api/subscription/activate {plan_id} extends expires_at by exactly plan days and sets tier=PREMIUM MEMBER (invalid plan -> 404, no token -> 401, history entry added), /api/proxies GET+POST+DELETE guarded (no token -> 401), validation for label/host/port working (400s), soft-delete removes from list and non-existent id -> 404, /api/hunt correctly prioritises owned proxies at top (owned=true SOCKS5 rows before generated). Fixed CRITICAL NameError bug in DELETE /api/proxies/{id} (server.py referenced undefined `oid_or_404` -> replaced with ObjectId(...) + InvalidId 404 guard). Frontend E2E on 390x844 web preview: login demo -> beranda; theme-toggle switches to light theme (screenshot confirms), lang-toggle switches PROFIL PELANGGAN <-> CUSTOMER PROFILE (Beranda<->Home tabs), preference persists across page reload; go-servers-card opens /servers, add-server modal + proxy-save-button creates 'E2E_TEST_srv' entry, delete removes it; go-plans-card opens /langganan showing 4 plan cards, activating basic30 returns to beranda and countdown jumps from ~30H to 330H (12J 25M 5D) confirming +30 days on top of prior active state; hunting for 8.8.8.8 returns 13 rows (owned 103.10.20.30:1080 SOCKS5 first with 'MILIK ANDA' badge), Salin Semua shows disalin toast, Ekspor TXT shows 'File proxy diekspor' toast (web clipboard fallback works); logout returns to /login. Regression: demo login + hunt + ip-info + history intact.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/proxies/{id}", "issue": "Deleting an already-soft-deleted proxy returns 200 again instead of 404, because the update_one matches the doc regardless of deleted_at. Cosmetic — soft-delete idempotency is arguably fine, but the intent seems to be 404 for gone rows. Consider filtering {'deleted_at': None} in the query."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Add-Server modal (servers.tsx)", "issue": "On 390x844, proxy-save-button and proxy-cancel-button fall below the visible viewport when the modal opens with the keyboard-height container; Playwright reports 'Element is outside of the viewport' on direct click. Real users must scroll inside the modal to reach Save/Cancel. Same class of issue as the change-password modal in iteration 3. Wrap the modal body in a ScrollView / KeyboardAvoidingView + ScrollView so the action row is reachable without extra scrolling.", "testID": "proxy-save-button", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Hunting", "issues": ["'File proxy diekspor' toast overlaps the target-IP input briefly after export (same cosmetic overlay as 'Salin Semua' toast noted last iteration)."]}
+    ],
+    "react_native_issues": [
+      {"component": "shadow* styles", "issue": "Expo web console warns: '\"shadow*\" style props are deprecated. Use \"boxShadow\"'. Non-blocking but should be migrated. Reference: styles across screens using shadowColor/shadowOffset/shadowOpacity/shadowRadius."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_review_iteration4.py",
+    "/app/test_reports/pytest/iter4.xml",
+    "/app/test_reports/browser/iter4_light.jpeg",
+    "/app/test_reports/browser/iter4_servers.jpeg",
+    "/app/test_reports/browser/iter4_plans.jpeg",
+    "/app/test_reports/browser/iter4_hunt_done.jpeg"
+  ],
+  "action_items": [
+    "(FIXED by testing agent) NameError in DELETE /api/proxies/{id}: `oid_or_404` was undefined — replaced with inline ObjectId(...) + InvalidId 404 guard. Backend restarted; endpoint now works. Please double-check the fix aligns with your intended helper location.",
+    "(Nice to have) Wrap add-server / add-plan / change-password modal content in a ScrollView (or reduce vertical padding) so the primary action buttons are visible on ~390x844 without an extra swipe.",
+    "(Nice to have) Filter {'deleted_at': None} in DELETE /api/proxies/{id} so subsequent deletes of the same id return 404 for consistency.",
+    "(Nice to have) Migrate shadowColor/shadowOffset/shadowOpacity/shadowRadius StyleSheet entries to a single `boxShadow` string to clear Expo web deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py line 561 referenced an undefined `oid_or_404` helper — direct call site would 500 on every DELETE /api/proxies/{id}. Fixed inline; consider adding a shared helper if you plan to reuse this ObjectId parse pattern.",
+    "PLANS list is defined inline in server.py; fine for now, but if you keep adding features consider extracting plans + hunt helpers into modules.",
+    "activate_subscription correctly normalises naive expires_at to UTC before comparing, matching the fix mentioned in the review note (verified: +90 days delta and +30 days compounding both work)."
+  ],
+  "updated_files": [
+    "/app/backend/server.py",
+    "/app/backend/tests/test_review_iteration4.py",
+    "/app/test_reports/pytest/iter4.xml",
+    "/app/test_reports/iteration_4.json"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 pytest for iteration 4 new features + regression; earlier 21/21 still valid)",
+    "frontend": "100% for all six requested new-feature flows (theme toggle, lang toggle + persistence, servers CRUD, plans activation, hunt export + copy, logout regression)"
+  },
+  "seed_data_creation": "Demo user idmee remains seeded. Test run created & then deleted proxy 'E2E_TEST_srv 77.88.99.100:5555' and (test) 'TEST_prio 9.9.9.9:4321'; a pre-existing 'VPS SG 103.10.20.30:1080' from manual curl remains for idmee (kept by design to not touch manual seed data).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "New testIDs for iter4: theme-toggle, lang-toggle, go-servers-card, go-plans-card, servers-back-button, add-server-button, server-item-<id>, server-delete-<id>, servers-empty, proxy-label-input, proxy-host-input, proxy-port-input, proxy-user-input, proxy-pass-input, proxy-proto-<socks5|http|https|ssh>, proxy-cancel-button, proxy-save-button, plans-back-button, plan-card-<id>, plan-activate-<id>, hunt-export, hunt-copy-all. Language toggle persists via storage (verified across page reload). When automating add-server / add-plan / change-password buttons at 390x844, scroll the save button into view via page.evaluate before clicking (viewport clipping is a UX issue but not a test blocker).",
+  "rca_of_issue": "DELETE /api/proxies/{id} NameError RCA: server.py referred to `oid_or_404(proxy_id, 'Proxy')` but the helper was never defined. Reproduction: create a proxy via POST /api/proxies then DELETE /api/proxies/<id> — server logs show `NameError: name 'oid_or_404' is not defined` and FastAPI returns 500. Mitigation applied: replaced the call with a local try/except ObjectId(...) + InvalidId -> HTTPException(404) block, matching how the rest of the file handles user._id via ObjectId(user.id). Verified by pytest test_create_and_list_and_soft_delete (200 create -> 200 delete) and 404 for an arbitrary well-formed ObjectId."
+}

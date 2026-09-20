@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api, formatBytes, UserT } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useToast } from "@/src/components/toast";
+import { useSettings } from "@/src/settings";
 import { usesNativeTabs } from "@/src/navigation";
 import { font, makeStyles, mono, radius, spacing, useTheme } from "@/src/theme";
 
@@ -40,6 +41,7 @@ export default function BerandaScreen() {
   const toast = useToast();
   const qc = useQueryClient();
   const { user: authUser, signOut, setUser } = useAuth();
+  const { t, lang, scheme, toggleLang, toggleScheme } = useSettings();
 
   const [tick, setTick] = useState(Date.now());
   useEffect(() => {
@@ -68,7 +70,7 @@ export default function BerandaScreen() {
     onSuccess: (u) => {
       qc.setQueryData(["profile"], u);
       setWhitelistIp("");
-      toast.show("IP ditambahkan ke whitelist", "success");
+      toast.show(t("ip_added"), "success");
     },
     onError: (e: Error) => toast.show(e.message, "error"),
   });
@@ -77,7 +79,7 @@ export default function BerandaScreen() {
     mutationFn: (ip: string) => api<UserT>(`/profile/whitelist/${encodeURIComponent(ip)}`, { method: "DELETE" }),
     onSuccess: (u) => {
       qc.setQueryData(["profile"], u);
-      toast.show("IP dihapus dari whitelist", "info");
+      toast.show(t("ip_removed"), "info");
     },
     onError: (e: Error) => toast.show(e.message, "error"),
   });
@@ -86,7 +88,7 @@ export default function BerandaScreen() {
     mutationFn: () => api<UserT>("/profile/reset-traffic", { method: "POST" }),
     onSuccess: (u) => {
       qc.setQueryData(["profile"], u);
-      toast.show("Traffic direset", "success");
+      toast.show(t("traffic_reset"), "success");
     },
     onError: (e: Error) => toast.show(e.message, "error"),
   });
@@ -95,7 +97,7 @@ export default function BerandaScreen() {
     mutationFn: () => api("/history", { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["history"] });
-      toast.show("Riwayat dibersihkan", "info");
+      toast.show(t("history_cleared"), "info");
     },
     onError: (e: Error) => toast.show(e.message, "error"),
   });
@@ -116,7 +118,7 @@ export default function BerandaScreen() {
       setPwModal(false);
       setCurPw("");
       setNewPw("");
-      toast.show("Password berhasil diganti", "success");
+      toast.show(t("pw_changed"), "success");
     },
     onError: (e: Error) => toast.show(e.message, "error"),
   });
@@ -124,7 +126,7 @@ export default function BerandaScreen() {
   const copyCreds = async () => {
     if (!user) return;
     await Clipboard.setStringAsync(`${user.server_host}:${user.server_port}`);
-    toast.show("Alamat server disalin", "success");
+    toast.show(t("server_copied"), "success");
   };
 
   if (!user) {
@@ -148,8 +150,14 @@ export default function BerandaScreen() {
           </View>
           <Text style={styles.brandSub}>Hunter Engine Access</Text>
         </View>
+        <Pressable testID="theme-toggle" onPress={toggleScheme} style={styles.headerIcon} hitSlop={6}>
+          <Icon name={scheme === "dark" ? "weather-night" : "white-balance-sunny"} size={20} color={colors.onSurfaceSecondary} />
+        </Pressable>
+        <Pressable testID="lang-toggle" onPress={toggleLang} style={styles.langBtn} hitSlop={6}>
+          <Text style={styles.langText}>{lang.toUpperCase()}</Text>
+        </Pressable>
         <Pressable testID="logout-button" onPress={signOut} style={styles.logoutBtn} hitSlop={8}>
-          <Text style={styles.logoutText}>LOGOUT</Text>
+          <Text style={styles.logoutText}>{t("logout")}</Text>
         </Pressable>
       </View>
 
@@ -158,7 +166,7 @@ export default function BerandaScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View testID="profile-card" style={styles.card}>
-          <Text style={styles.cardLabel}>PROFIL PELANGGAN</Text>
+          <Text style={styles.cardLabel}>{t("customer_profile")}</Text>
           <View style={styles.profileRow}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{user.username.charAt(0).toUpperCase()}</Text>
@@ -167,9 +175,9 @@ export default function BerandaScreen() {
               <Text testID="profile-username" style={styles.username}>{user.username}</Text>
               <Text style={styles.tier}>{user.tier}</Text>
               <Text style={styles.activeLabel}>
-                Aktif:{" "}
+                {t("active")}{" "}
                 <Text style={styles.activeValue} testID="membership-countdown">
-                  {cd.expired ? "KEDALUWARSA" : `${cd.d}H ${cd.h}J ${cd.m}M ${cd.s}D`}
+                  {cd.expired ? t("expired") : `${cd.d}H ${cd.h}J ${cd.m}M ${cd.s}D`}
                 </Text>
               </Text>
             </View>
@@ -177,26 +185,26 @@ export default function BerandaScreen() {
 
           <Pressable testID="server-creds" onPress={copyCreds} style={styles.credBox}>
             <View style={styles.credRow}>
-              <Text style={styles.credKey}>SERVER</Text>
+              <Text style={styles.credKey}>{t("server")}</Text>
               <Text style={styles.credVal} numberOfLines={1}>{user.server_host}</Text>
             </View>
             <View style={styles.credDivider} />
             <View style={styles.credRow}>
-              <Text style={styles.credKey}>PORT</Text>
+              <Text style={styles.credKey}>{t("port")}</Text>
               <Text style={[styles.credVal, styles.credPort]}>{user.server_port}</Text>
             </View>
           </Pressable>
 
           <View style={styles.btnRow}>
             <Pressable testID="change-password-button" onPress={() => setPwModal(true)} style={[styles.actionBtn, styles.actionInfo]}>
-              <Text style={[styles.actionText, { color: colors.info }]}>GANTI PASSWORD</Text>
+              <Text style={[styles.actionText, { color: colors.info }]}>{t("change_password")}</Text>
             </Pressable>
             <Pressable
               testID="clear-history-button"
               onPress={() => clearHistoryMut.mutate()}
               style={[styles.actionBtn, styles.actionDanger]}
             >
-              <Text style={[styles.actionText, { color: colors.error }]}>CLEAR ALL</Text>
+              <Text style={[styles.actionText, { color: colors.error }]}>{t("clear_all")}</Text>
             </Pressable>
           </View>
           <Pressable
@@ -205,13 +213,13 @@ export default function BerandaScreen() {
             style={[styles.actionBtnFull, { borderColor: colors.divider, backgroundColor: colors.surfaceTertiary }]}
           >
             <Text style={[styles.actionText, { color: colors.onSurfaceSecondary }]}>
-              RESET TRAFFIC · {formatBytes(user.traffic_bytes)}
+              {t("reset_traffic")} · {formatBytes(user.traffic_bytes)}
             </Text>
           </Pressable>
 
           <View style={styles.hr} />
 
-          <Text style={styles.cardLabel}>IP WHITELIST</Text>
+          <Text style={styles.cardLabel}>{t("ip_whitelist")}</Text>
           <View style={styles.wlInputRow}>
             <TextInput
               testID="whitelist-input"
@@ -231,7 +239,7 @@ export default function BerandaScreen() {
               {myIpMut.isPending ? (
                 <ActivityIndicator size="small" color={colors.onBrandPrimary} />
               ) : (
-                <Text style={styles.myIpText}>WHITELIST{"\n"}MY IP</Text>
+                <Text style={styles.myIpText}>{t("whitelist_myip")}</Text>
               )}
             </Pressable>
           </View>
@@ -239,14 +247,14 @@ export default function BerandaScreen() {
             testID="whitelist-add-button"
             onPress={() => {
               if (!whitelistIp.trim()) {
-                toast.show("Isi alamat IP dulu", "error");
+                toast.show(t("fill_ip_first"), "error");
                 return;
               }
               whitelistMut.mutate(whitelistIp.trim());
             }}
             style={[styles.actionBtnFull, { backgroundColor: colors.brandTertiary, borderColor: colors.border }]}
           >
-            <Text style={[styles.actionText, { color: colors.onBrandTertiary }]}>TAMBAH KE WHITELIST</Text>
+            <Text style={[styles.actionText, { color: colors.onBrandTertiary }]}>{t("add_to_whitelist")}</Text>
           </Pressable>
 
           {user.whitelist_ips.length > 0 ? (
@@ -263,27 +271,43 @@ export default function BerandaScreen() {
           ) : null}
 
           <View style={styles.poolRow}>
-            <Text style={styles.poolLabel}>TOTAL IPS POOL</Text>
+            <Text style={styles.poolLabel}>{t("total_pool")}</Text>
             <View style={styles.poolValueRow}>
               <Icon name="earth" size={16} color={colors.brandPrimary} />
-              <Text style={styles.poolValue}>{user.total_pool} IPS POOL</Text>
+              <Text style={styles.poolValue}>{user.total_pool} {t("ips_pool")}</Text>
             </View>
           </View>
         </View>
 
+        <Pressable testID="go-servers-card" onPress={() => router.push("/servers")} style={styles.linkCard}>
+          <Icon name="server-network" size={22} color={colors.brandPrimary} />
+          <View style={styles.flex1}>
+            <Text style={styles.linkTitle}>{t("link_servers")}</Text>
+            <Text style={styles.linkSub}>{t("link_servers_sub")}</Text>
+          </View>
+          <Icon name="chevron-right" size={24} color={colors.muted} />
+        </Pressable>
+        <Pressable testID="go-plans-card" onPress={() => router.push("/langganan")} style={styles.linkCard}>
+          <Icon name="crown" size={22} color={colors.warning} />
+          <View style={styles.flex1}>
+            <Text style={styles.linkTitle}>{t("link_plans")}</Text>
+            <Text style={styles.linkSub}>{t("link_plans_sub")}</Text>
+          </View>
+          <Icon name="chevron-right" size={24} color={colors.muted} />
+        </Pressable>
         <Pressable testID="go-hunting-card" onPress={() => router.push("/hunting")} style={styles.linkCard}>
           <Icon name="target" size={22} color={colors.brandPrimary} />
           <View style={styles.flex1}>
-            <Text style={styles.linkTitle}>IP Hunting</Text>
-            <Text style={styles.linkSub}>Cari proxy berdasarkan negara, kota & ISP</Text>
+            <Text style={styles.linkTitle}>{t("link_hunting")}</Text>
+            <Text style={styles.linkSub}>{t("link_hunting_sub")}</Text>
           </View>
           <Icon name="chevron-right" size={24} color={colors.muted} />
         </Pressable>
         <Pressable testID="go-cekip-card" onPress={() => router.push("/cekip")} style={styles.linkCard}>
           <Icon name="web" size={22} color={colors.info} />
           <View style={styles.flex1}>
-            <Text style={styles.linkTitle}>Cek Informasi IP</Text>
-            <Text style={styles.linkSub}>Lacak negara, kota, dan ISP dari sebuah IP</Text>
+            <Text style={styles.linkTitle}>{t("link_cekip")}</Text>
+            <Text style={styles.linkSub}>{t("link_cekip_sub")}</Text>
           </View>
           <Icon name="chevron-right" size={24} color={colors.muted} />
         </Pressable>
@@ -292,9 +316,9 @@ export default function BerandaScreen() {
       <Modal visible={pwModal} transparent animationType="slide" onRequestClose={() => setPwModal(false)}>
         <View style={styles.modalBackdrop}>
           <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
-            <Text style={styles.sheetTitle}>Ganti Password</Text>
+            <Text style={styles.sheetTitle}>{t("change_password")}</Text>
             <KeyboardAwareScrollView bottomOffset={24} keyboardShouldPersistTaps="handled">
-              <Text style={styles.fieldLabel}>PASSWORD SAAT INI</Text>
+              <Text style={styles.fieldLabel}>{t("cur_password")}</Text>
               <TextInput
                 testID="cur-password-input"
                 style={styles.input}
@@ -303,7 +327,7 @@ export default function BerandaScreen() {
                 value={curPw}
                 onChangeText={setCurPw}
               />
-              <Text style={styles.fieldLabel}>PASSWORD BARU</Text>
+              <Text style={styles.fieldLabel}>{t("new_password")}</Text>
               <TextInput
                 testID="new-password-input"
                 style={styles.input}
@@ -314,13 +338,13 @@ export default function BerandaScreen() {
               />
               <View style={styles.btnRow}>
                 <Pressable testID="pw-cancel-button" onPress={() => setPwModal(false)} style={[styles.sheetBtn, { borderColor: colors.divider }]}>
-                  <Text style={[styles.actionText, { color: colors.onSurfaceSecondary }]}>BATAL</Text>
+                  <Text style={[styles.actionText, { color: colors.onSurfaceSecondary }]}>{t("cancel")}</Text>
                 </Pressable>
                 <Pressable
                   testID="pw-save-button"
                   onPress={() => {
                     if (newPw.length < 6) {
-                      toast.show("Password baru minimal 6 karakter", "error");
+                      toast.show(t("new_pw_min6"), "error");
                       return;
                     }
                     changePwMut.mutate();
@@ -331,7 +355,7 @@ export default function BerandaScreen() {
                   {changePwMut.isPending ? (
                     <ActivityIndicator size="small" color={colors.onBrandPrimary} />
                   ) : (
-                    <Text style={[styles.actionText, { color: colors.onBrandPrimary }]}>SIMPAN</Text>
+                    <Text style={[styles.actionText, { color: colors.onBrandPrimary }]}>{t("save")}</Text>
                   )}
                 </Pressable>
               </View>
@@ -367,6 +391,29 @@ const useStyles = makeStyles((colors) => ({
     paddingVertical: spacing.sm,
   },
   logoutText: { color: colors.error, fontSize: font.sm, fontWeight: "800", letterSpacing: 1 },
+  headerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.sm,
+  },
+  langBtn: {
+    width: 44,
+    height: 40,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.sm,
+  },
+  langText: { color: colors.onSurfaceSecondary, fontSize: font.sm, fontWeight: "800" },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.md },
   card: {
     backgroundColor: colors.surfaceSecondary,

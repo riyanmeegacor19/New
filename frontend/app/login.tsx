@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ApiError } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useToast } from "@/src/components/toast";
+import { useT } from "@/src/settings";
 import { font, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
 export default function LoginScreen() {
@@ -16,6 +17,7 @@ export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const toast = useToast();
+  const t = useT();
   const { signIn } = useAuth();
 
   const [username, setUsername] = useState("");
@@ -25,7 +27,7 @@ export default function LoginScreen() {
 
   const onLogin = async () => {
     if (!username.trim() || !password) {
-      toast.show("Isi username dan password", "error");
+      toast.show(t("fill_userpass"), "error");
       return;
     }
     setLoading(true);
@@ -33,7 +35,7 @@ export default function LoginScreen() {
       await signIn(username.trim(), password);
       router.replace("/beranda");
     } catch (e) {
-      toast.show(e instanceof ApiError ? e.message : "Login gagal", "error");
+      toast.show(e instanceof ApiError ? e.message : t("login_failed"), "error");
     } finally {
       setLoading(false);
     }
@@ -57,9 +59,9 @@ export default function LoginScreen() {
             <Text style={styles.brand}>RIYANMEE </Text>
             <Text style={styles.brandAccent}>PROXY</Text>
           </View>
-          <Text style={styles.subtitle}>HUNTER ENGINE ACCESS</Text>
+          <Text style={styles.subtitle}>{t("hunter_access")}</Text>
 
-          <Text style={styles.label}>USERNAME</Text>
+          <Text style={styles.label}>{t("username")}</Text>
           <TextInput
             testID="login-username-input"
             style={styles.input}
@@ -71,7 +73,7 @@ export default function LoginScreen() {
             onChangeText={setUsername}
           />
 
-          <Text style={styles.label}>PASSWORD</Text>
+          <Text style={styles.label}>{t("password")}</Text>
           <View style={styles.passWrap}>
             <TextInput
               testID="login-password-input"
@@ -98,7 +100,7 @@ export default function LoginScreen() {
               <ActivityIndicator color={colors.onBrandPrimary} />
             ) : (
               <View style={styles.loginRow}>
-                <Text style={styles.loginText}>LOGIN</Text>
+                <Text style={styles.loginText}>{t("login")}</Text>
                 <Icon name="arrow-right" size={20} color={colors.onBrandPrimary} />
               </View>
             )}
@@ -106,16 +108,16 @@ export default function LoginScreen() {
 
           <Pressable testID="go-register-button" onPress={() => router.push("/register")} style={styles.registerLink}>
             <Text style={styles.registerText}>
-              Belum punya akun? <Text style={styles.registerTextAccent}>Daftar sekarang</Text>
+              {t("no_account")}<Text style={styles.registerTextAccent}>{t("register_now")}</Text>
             </Text>
           </Pressable>
 
-          <Text style={styles.encrypted}>SYSTEM SECURELY ENCRYPTED</Text>
+          <Text style={styles.encrypted}>{t("encrypted")}</Text>
         </View>
 
         <View style={styles.demoHint}>
           <Icon name="information-outline" size={16} color={colors.muted} />
-          <Text style={styles.demoText}>Akun demo — user: idmee · pass: riyanmee123</Text>
+          <Text style={styles.demoText}>{t("demo_hint")}</Text>
         </View>
       </KeyboardAwareScrollView>
     </View>

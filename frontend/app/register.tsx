@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ApiError } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useToast } from "@/src/components/toast";
+import { useT } from "@/src/settings";
 import { font, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
 export default function RegisterScreen() {
@@ -16,6 +17,7 @@ export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const toast = useToast();
+  const t = useT();
   const { signUp } = useAuth();
 
   const [username, setUsername] = useState("");
@@ -25,24 +27,24 @@ export default function RegisterScreen() {
 
   const onRegister = async () => {
     if (username.trim().length < 3) {
-      toast.show("Username minimal 3 karakter", "error");
+      toast.show(t("username_min3"), "error");
       return;
     }
     if (password.length < 6) {
-      toast.show("Password minimal 6 karakter", "error");
+      toast.show(t("password_min6"), "error");
       return;
     }
     if (password !== confirm) {
-      toast.show("Konfirmasi password tidak cocok", "error");
+      toast.show(t("confirm_mismatch"), "error");
       return;
     }
     setLoading(true);
     try {
       await signUp(username.trim(), password);
-      toast.show("Pendaftaran berhasil", "success");
+      toast.show(t("register_ok"), "success");
       router.replace("/beranda");
     } catch (e) {
-      toast.show(e instanceof ApiError ? e.message : "Pendaftaran gagal", "error");
+      toast.show(e instanceof ApiError ? e.message : t("register_failed"), "error");
     } finally {
       setLoading(false);
     }
@@ -60,43 +62,43 @@ export default function RegisterScreen() {
       >
         <Pressable testID="register-back-button" onPress={() => router.back()} style={styles.back} hitSlop={8}>
           <Icon name="chevron-left" size={26} color={colors.onSurface} />
-          <Text style={styles.backText}>Kembali</Text>
+          <Text style={styles.backText}>{t("back")}</Text>
         </Pressable>
 
         <View style={styles.card}>
           <View style={styles.logoBox}>
             <Icon name="account-plus" size={36} color={colors.brandPrimary} />
           </View>
-          <Text style={styles.title}>DAFTAR AKUN</Text>
-          <Text style={styles.subtitle}>Buat akun RIYANMEE PROXY baru</Text>
+          <Text style={styles.title}>{t("register_title")}</Text>
+          <Text style={styles.subtitle}>{t("register_sub")}</Text>
 
-          <Text style={styles.label}>USERNAME</Text>
+          <Text style={styles.label}>{t("username")}</Text>
           <TextInput
             testID="register-username-input"
             style={styles.input}
-            placeholder="Pilih username"
+            placeholder={t("choose_username")}
             placeholderTextColor={colors.muted}
             autoCapitalize="none"
             autoCorrect={false}
             value={username}
             onChangeText={setUsername}
           />
-          <Text style={styles.label}>PASSWORD</Text>
+          <Text style={styles.label}>{t("password")}</Text>
           <TextInput
             testID="register-password-input"
             style={styles.input}
-            placeholder="Min. 6 karakter"
+            placeholder={t("min6")}
             placeholderTextColor={colors.muted}
             secureTextEntry
             autoCapitalize="none"
             value={password}
             onChangeText={setPassword}
           />
-          <Text style={styles.label}>KONFIRMASI PASSWORD</Text>
+          <Text style={styles.label}>{t("confirm_password")}</Text>
           <TextInput
             testID="register-confirm-input"
             style={styles.input}
-            placeholder="Ulangi password"
+            placeholder={t("repeat_password")}
             placeholderTextColor={colors.muted}
             secureTextEntry
             autoCapitalize="none"
@@ -108,13 +110,13 @@ export default function RegisterScreen() {
             {loading ? (
               <ActivityIndicator color={colors.onBrandPrimary} />
             ) : (
-              <Text style={styles.btnText}>DAFTAR SEKARANG</Text>
+              <Text style={styles.btnText}>{t("register_submit")}</Text>
             )}
           </Pressable>
 
           <Pressable testID="go-login-button" onPress={() => router.replace("/login")} style={styles.loginLink}>
             <Text style={styles.loginLinkText}>
-              Sudah punya akun? <Text style={styles.loginLinkAccent}>Masuk</Text>
+              {t("have_account")}<Text style={styles.loginLinkAccent}>{t("sign_in")}</Text>
             </Text>
           </Pressable>
         </View>

@@ -41,6 +41,12 @@ HUNT_MODES = ("ultimate", "full", "city", "isp")
 TOTAL_POOL = "480M+"
 TRACE_URL = "https://www.cloudflare.com/cdn-cgi/trace"
 
+PLANS = [
+    {"id": "day7", "name": "Paket 7 Hari", "days": 7, "price": 150000, "price_label": "Rp 150.000", "tier": "PREMIUM MEMBER", "popular": False, "features": ["Semua fitur hunting", "5 IP whitelist", "Cek IP"]},
+    {"id": "day30", "name": "Paket 30 Hari", "days": 30, "price": 500000, "price_label": "Rp 500.000", "tier": "PREMIUM MEMBER", "popular": True, "features": ["Semua fitur hunting", "IP whitelist tanpa batas", "Prioritas server"]},
+    {"id": "day90", "name": "Paket 90 Hari", "days": 90, "price": 1400000, "price_label": "Rp 1.400.000", "tier": "PREMIUM MEMBER", "popular": False, "features": ["Semua fitur Paket 30 Hari", "Server dedicated", "Dukungan prioritas"]},
+]
+
 bearer = HTTPBearer(auto_error=False)
 
 
@@ -125,6 +131,31 @@ class IpInfoIn(BaseModel):
 class HuntIn(BaseModel):
     target_ip: str
     mode: str = "ultimate"
+
+
+class ProxyServerDoc(BaseDocument):
+    user_id: str
+    label: str
+    host: str
+    port: int
+    username: str = ""
+    password: str = ""
+    protocol: str = "socks5"
+    created_at: datetime = Field(default_factory=utcnow)
+    deleted_at: Optional[datetime] = None
+
+
+class ProxyIn(BaseModel):
+    label: str
+    host: str
+    port: int
+    username: str = ""
+    password: str = ""
+    protocol: str = "socks5"
+
+
+class ActivateIn(BaseModel):
+    plan_id: str
 
 
 # ---------------------------------------------------------------------------
@@ -415,6 +446,24 @@ async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
         raise HTTPException(status_code=400, detail="Masukkan alamat IP target yang valid")
     geo = await geo_lookup(ip)
     results = hunt_pool(geo, mode)
+    owned = await db.proxies.find({"user_id": str(user.id), "deleted_at": None}).to_list(100)
+    owned_results = [
+        {
+            "ip": p["host"],
+            "port": p["port"],
+            "country": geo.get("country", ""),
+            "country_code": geo.get("country_code", ""),
+            "city": geo.get("city", ""),
+            "isp": geo.get("isp", ""),
+            "asn": geo.get("asn", ""),
+            "latency_ms": 12 + idx * 3,
+            "type": p.get("protocol", "socks5").upper(),
+            "owned": True,
+            "label": p.get("label", ""),
+        }
+        for idx, p in enumerate(owned)
+    ]
+    results = owned_results + results
     mode_label = {
         "ultimate": "ULTIMATE AUTO",
         "full": "FULL SCAN",
@@ -461,6 +510,98 @@ async def get_history(user: Annotated[UserDoc, Depends(current_user)]):
 async def clear_history(user: Annotated[UserDoc, Depends(current_user)]):
     await db.history.delete_many({"user_id": str(user.id)})
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# My proxies (Sambung Server Asli)
+# ---------------------------------------------------------------------------
+def proxy_out(doc: dict) -> dict:
+    return {
+        "id": str(doc["_id"]),
+        "label": doc.get("label", ""),
+        "host": doc.get("host", ""),
+        "port": doc.get("port", 0),
+        "username": doc.get("username", ""),
+        "protocol": doc.get("protocol", "socks5"),
+        "created_at": doc["created_at"].isoformat() if isinstance(doc.get("created_at"), datetime) else doc.get("created_at"),
+    }
+
+
+@api_router.get("/proxies")
+async def list_proxies(user: Annotated[UserDoc, Depends(current_user)]):
+    docs = await db.proxies.find({"user_id": str(user.id), "deleted_at": None}).sort("created_at", -1).to_list(200)
+    return [proxy_out(d) for d in docs]
+
+
+@api_router.post("/proxies")
+async def create_proxy(body: ProxyIn, user: Annotated[UserDoc, Depends(current_user)]):
+    if body.protocol not in ("socks5", "http", "https", "ssh"):
+        raise HTTPException(status_code=400, detail="Protokol tidak valid")
+    if not (1 <= body.port <= 65535):
+        raise HTTPException(status_code=400, detail="Port harus 1-65535")
+    if not body.label.strip() or not body.host.strip():
+        raise HTTPException(status_code=400, detail="Label dan host wajib diisi")
+    doc = ProxyServerDoc(
+        user_id=str(user.id),
+        label=body.label.strip(),
+        host=body.host.strip(),
+        port=body.port,
+        username=body.username.strip(),
+        password=body.password,
+        protocol=body.protocol,
+    )
+    result = await db.proxies.insert_one(doc.to_mongo())
+    fresh = await db.proxies.find_one({"_id": result.inserted_id})
+    return proxy_out(fresh)
+
+
+@api_router.delete("/proxies/{proxy_id}")
+async def delete_proxy(proxy_id: str, user: Annotated[UserDoc, Depends(current_user)]):
+    try:
+        oid = ObjectId(proxy_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=404, detail="Proxy tidak ditemukan")
+    result = await db.proxies.update_one(
+        {"_id": oid, "user_id": str(user.id)}, {"$set": {"deleted_at": utcnow()}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Proxy tidak ditemukan")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Subscription plans (mock activation)
+# ---------------------------------------------------------------------------
+@api_router.get("/plans")
+async def get_plans():
+    return PLANS
+
+
+@api_router.post("/subscription/activate")
+async def activate_subscription(body: ActivateIn, user: Annotated[UserDoc, Depends(current_user)]):
+    plan = next((p for p in PLANS if p["id"] == body.plan_id), None)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Paket tidak ditemukan")
+    now = utcnow()
+    current = user.expires_at
+    if current and current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    base = current if current and current > now else now
+    new_expiry = base + timedelta(days=plan["days"])
+    await db.users.update_one(
+        {"_id": ObjectId(user.id)},
+        {"$set": {"expires_at": new_expiry, "tier": plan["tier"]}},
+    )
+    await db.history.insert_one(
+        HistoryDoc(
+            user_id=str(user.id),
+            kind="connect",
+            title=f"Aktivasi paket · {plan['name']}",
+            subtitle=f"+{plan['days']} hari · {plan['price_label']}",
+        ).to_mongo()
+    )
+    fresh = UserDoc.from_mongo(await db.users.find_one({"_id": ObjectId(user.id)}))
+    return public_user(fresh)
 
 
 app.include_router(api_router)
