@@ -53,7 +53,8 @@ sudo chmod 600 /opt/riyanmee-gateway/.env
 
 ## 4. Buka firewall
 ```bash
-sudo ufw allow 8080/tcp   # samakan dengan LISTEN_PORT
+sudo ufw allow 8080/tcp   # HTTP/HTTPS proxy (samakan dengan LISTEN_PORT)
+sudo ufw allow 1080/tcp   # SOCKS5 proxy (samakan dengan LISTEN_PORT_SOCKS)
 ```
 
 ## 5. Jalankan sebagai service
@@ -84,14 +85,19 @@ curl -v -x http://USER:PASS@VPS:8080 https://geo.brdtest.com/mygeo.json
 # HTTP biasa
 curl -v -x http://USER:PASS@VPS:8080 http://example.com
 
-# Kredensial salah / pelanggan non-aktif -> harus 407
+# SOCKS5 (pakai socks5h agar DNS di-resolve remote)
+curl -v -x socks5h://USER:PASS@VPS:1080 https://geo.brdtest.com/mygeo.json
+
+# Kredensial salah / pelanggan non-aktif -> harus 407 (HTTP) / auth failure (SOCKS5)
 curl -v -x http://salah:salah@VPS:8080 https://example.com
 ```
 Jika berhasil, `mygeo.json` menampilkan negara sesuai paket pelanggan, dan
 kuota pemakaian bertambah di **Panel Admin → Pelanggan**.
 
 ## 8. Catatan penting
-- Port Bright Data **44445** (HTTP/HTTPS/CONNECT). SOCKS5 pakai `22228` (belum diaktifkan di gateway ini).
+- Port Bright Data **44445** (HTTP/HTTPS/CONNECT) dipakai sebagai upstream untuk KEDUA listener (HTTP & SOCKS5).
+- Gateway ini menyediakan **HTTP/HTTPS** (port 8080) dan **SOCKS5** (port 1080) untuk pelanggan. SOCKS5 pakai auth username/password (RFC 1929) dan hanya perintah CONNECT.
+- Untuk SOCKS5 di client, gunakan `socks5h://` agar DNS di-resolve di sisi remote.
 - Kuota Bright Data tidak real-time; kuota RIYANMEE dihitung lokal oleh gateway → backend.
 - Gateway ini WAJIB pakai auth (sudah). Jangan biarkan port terbuka tanpa firewall.
 - Untuk banyak pelanggan bersamaan, naikkan `MAX_CONNECTIONS` dan resource VPS.

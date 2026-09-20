@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, AdminStatsT } from "@/src/api";
+import { api, AdminStatsT, GatewayStatusT } from "@/src/api";
 import { SectionHeader } from "@/src/components/hud";
 import { font, glow, makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
@@ -16,6 +16,9 @@ export default function AdminHome() {
 
   const statsQ = useQuery({ queryKey: ["admin-stats"], queryFn: () => api<AdminStatsT>("/admin/stats"), refetchInterval: 15000 });
   const s = statsQ.data;
+
+  const gwQ = useQuery({ queryKey: ["admin-gateway-status"], queryFn: () => api<GatewayStatusT>("/admin/gateway-status"), refetchInterval: 20000 });
+  const gw = gwQ.data;
 
   return (
     <View style={styles.screen}>
@@ -42,6 +45,9 @@ export default function AdminHome() {
             <Stat icon="cash-multiple" label="Total Pendapatan" value={s?.revenue_label ?? "Rp 0"} styles={styles} colors={colors} accent={colors.brandPrimary} />
           </View>
         )}
+
+        <SectionHeader title="Status Gateway" icon="access-point-network" />
+        <GatewayCard gw={gw} loading={gwQ.isLoading} styles={styles} colors={colors} />
 
         <SectionHeader title="Manajemen" icon="tune-variant" />
         <NavCard icon="receipt-text" title="Pesanan" sub="Konfirmasi pembayaran pelanggan" badge={s?.pending_orders} onPress={() => router.push("/admin/orders")} styles={styles} colors={colors} />
@@ -83,6 +89,54 @@ function NavCard({ icon, title, sub, badge, onPress, styles, colors }: any) {
   );
 }
 
+function StatusPill({ online, styles, colors }: any) {
+  const c = online ? colors.brandPrimary : colors.error;
+  return (
+    <View style={[styles.pill, { borderColor: c }, glow(c, 6)]}>
+      <View style={[styles.pillDot, { backgroundColor: c }]} />
+      <Text style={[styles.pillText, { color: c }]}>{online ? "ONLINE" : "OFFLINE"}</Text>
+    </View>
+  );
+}
+
+function GatewayCard({ gw, loading, styles, colors }: any) {
+  if (loading) {
+    return (
+      <View style={styles.gwCard}>
+        <ActivityIndicator color={colors.brandPrimary} />
+      </View>
+    );
+  }
+  const configured = gw?.configured;
+  return (
+    <View style={styles.gwCard}>
+      <View style={styles.gwRow}>
+        <View style={[styles.gwIconBox, { borderColor: colors.brandPrimary }, glow(colors.brandPrimary, 5)]}>
+          <Icon name="server-network" size={18} color={colors.brandPrimary} />
+        </View>
+        <View style={styles.flex1}>
+          <Text style={styles.gwTitle}>VPS Gateway</Text>
+          <Text style={styles.gwMeta}>{configured ? `${gw.host}:${gw.port} · ${String(gw.protocol).toUpperCase()}` : "Belum diatur di Pengaturan"}</Text>
+        </View>
+        {configured ? <StatusPill online={gw.online} styles={styles} colors={colors} /> : (
+          <View style={[styles.pill, { borderColor: colors.muted }]}><Text style={[styles.pillText, { color: colors.muted }]}>N/A</Text></View>
+        )}
+      </View>
+      <View style={styles.gwDivider} />
+      <View style={styles.gwRow}>
+        <View style={[styles.gwIconBox, { borderColor: colors.info }, glow(colors.info, 5)]}>
+          <Icon name="earth" size={18} color={colors.info} />
+        </View>
+        <View style={styles.flex1}>
+          <Text style={styles.gwTitle}>Upstream Bright Data</Text>
+          <Text style={styles.gwMeta}>{gw?.upstream ? `${gw.upstream.host}:${gw.upstream.port}` : "-"}</Text>
+        </View>
+        <StatusPill online={gw?.upstream?.online} styles={styles} colors={colors} />
+      </View>
+    </View>
+  );
+}
+
 const useStyles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.surface },
   header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
@@ -101,6 +155,15 @@ const useStyles = makeStyles((colors) => ({
   navIconBox: { width: 46, height: 46, borderRadius: radius.md, borderWidth: 1, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center" },
   navTitle: { color: colors.onSurface, fontSize: font.lg, fontWeight: "700" },
   navSub: { color: colors.onSurfaceTertiary, fontSize: font.sm, marginTop: 2 },
+  gwCard: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: spacing.sm },
+  gwRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  gwIconBox: { width: 38, height: 38, borderRadius: radius.md, borderWidth: 1, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center" },
+  gwTitle: { color: colors.onSurface, fontSize: font.base, fontWeight: "700" },
+  gwMeta: { color: colors.onSurfaceTertiary, fontSize: font.sm, marginTop: 2 },
+  gwDivider: { height: 1, backgroundColor: colors.divider },
+  pill: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5 },
+  pillDot: { width: 7, height: 7, borderRadius: 4 },
+  pillText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
   badge: { minWidth: 24, height: 24, borderRadius: 12, backgroundColor: colors.warning, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
   badgeText: { color: colors.onWarning, fontSize: font.sm, fontWeight: "800" },
 }));

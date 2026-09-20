@@ -33,6 +33,7 @@ load_dotenv()
 
 LISTEN_HOST = os.environ.get("LISTEN_HOST", "0.0.0.0")
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "8080"))
+LISTEN_PORT_SOCKS = int(os.environ.get("LISTEN_PORT_SOCKS", "1080"))  # 0 = disable SOCKS5
 
 PLATFORM_AUTH_URL = os.environ["PLATFORM_AUTH_URL"]
 PLATFORM_USAGE_URL = os.environ["PLATFORM_USAGE_URL"]
@@ -239,11 +240,95 @@ async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
                     pass
 
 
+async def _socks_send(writer, data: bytes):
+    writer.write(data)
+    await writer.drain()
+
+
+async def handle_socks5(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    """Minimal SOCKS5 (RFC 1928) with username/password auth (RFC 1929), CONNECT only.
+
+    Traffic is still chained upstream through Bright Data via HTTP CONNECT.
+    """
+    up = down = 0
+    username = None
+    async with _sem:
+        async with aiohttp.ClientSession() as session:
+            try:
+                # --- greeting ---
+                ver, nmethods = await asyncio.wait_for(reader.readexactly(2), timeout=30)
+                if ver != 0x05:
+                    return
+                await reader.readexactly(nmethods)  # offered methods (ignored)
+                # require username/password (0x02)
+                await _socks_send(writer, bytes([0x05, 0x02]))
+                # --- username/password auth (RFC 1929) ---
+                auth_ver = (await reader.readexactly(1))[0]
+                if auth_ver != 0x01:
+                    await _socks_send(writer, bytes([0x01, 0x01]))
+                    return
+                ulen = (await reader.readexactly(1))[0]
+                uname = (await reader.readexactly(ulen)).decode("utf-8", "ignore")
+                plen = (await reader.readexactly(1))[0]
+                passwd = (await reader.readexactly(plen)).decode("utf-8", "ignore")
+                username = uname.strip().lower()
+                auth = await _authorize(session, username, passwd)
+                if not auth or not auth.get("active"):
+                    await _socks_send(writer, bytes([0x01, 0x01]))  # auth failure
+                    return
+                await _socks_send(writer, bytes([0x01, 0x00]))  # auth success
+                country = auth.get("country", "")
+                # --- request ---
+                ver, cmd, _rsv, atyp = await asyncio.wait_for(reader.readexactly(4), timeout=30)
+                if ver != 0x05:
+                    return
+                if atyp == 0x01:      # IPv4
+                    host = ".".join(str(b) for b in await reader.readexactly(4))
+                elif atyp == 0x03:    # domain
+                    dlen = (await reader.readexactly(1))[0]
+                    host = (await reader.readexactly(dlen)).decode("utf-8", "ignore")
+                elif atyp == 0x04:    # IPv6
+                    raw = await reader.readexactly(16)
+                    host = ":".join(raw[i:i + 2].hex() for i in range(0, 16, 2))
+                else:
+                    await _socks_send(writer, bytes([0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0]))
+                    return
+                port = int.from_bytes(await reader.readexactly(2), "big")
+                if cmd != 0x01:  # only CONNECT
+                    await _socks_send(writer, bytes([0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0]))
+                    return
+                target = f"[{host}]:{port}" if atyp == 0x04 else f"{host}:{port}"
+                try:
+                    u_reader, u_writer = await _open_upstream(target, country)
+                except Exception:
+                    await _socks_send(writer, bytes([0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]))
+                    return
+                # success reply (BND.ADDR 0.0.0.0:0)
+                await _socks_send(writer, bytes([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]))
+                up, down = await asyncio.gather(_pipe(reader, u_writer), _pipe(u_reader, writer))
+                u_writer.close()
+            except Exception as exc:
+                log.info("socks5 error: %s", exc)
+            finally:
+                if username:
+                    await _report_usage(session, username, up, down)
+                try:
+                    writer.close()
+                except Exception:
+                    pass
+
+
 async def main():
-    server = await asyncio.start_server(handle, LISTEN_HOST, LISTEN_PORT)
-    log.info("RIYANMEE gateway listening on %s:%s -> %s:%s", LISTEN_HOST, LISTEN_PORT, BRD_HOST, BRD_PORT)
-    async with server:
-        await server.serve_forever()
+    servers = []
+    http_server = await asyncio.start_server(handle, LISTEN_HOST, LISTEN_PORT)
+    servers.append(http_server)
+    log.info("HTTP/HTTPS proxy listening on %s:%s", LISTEN_HOST, LISTEN_PORT)
+    if LISTEN_PORT_SOCKS:
+        socks_server = await asyncio.start_server(handle_socks5, LISTEN_HOST, LISTEN_PORT_SOCKS)
+        servers.append(socks_server)
+        log.info("SOCKS5 proxy listening on %s:%s", LISTEN_HOST, LISTEN_PORT_SOCKS)
+    log.info("Upstream -> %s:%s", BRD_HOST, BRD_PORT)
+    await asyncio.gather(*(s.serve_forever() for s in servers))
 
 
 if __name__ == "__main__":

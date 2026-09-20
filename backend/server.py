@@ -1164,6 +1164,27 @@ async def proxy_usage(body: ProxyUsageIn, _: Annotated[bool, Depends(require_gat
     return {"ok": True, "bandwidth_used_mb": used_mb}
 
 
+@api_router.get("/admin/gateway-status")
+async def admin_gateway_status(_: Annotated[UserDoc, Depends(require_admin)]):
+    """Live reachability of the configured VPS gateway and the Bright Data upstream."""
+    s = await get_settings_doc()
+    host = (s.get("proxy_host", "") or "").strip()
+    port = int(s.get("proxy_port", 0) or 0)
+    gateway_online = bool(host and port) and await tcp_check(host, port)
+    up = s.get("upstream", {}) or {}
+    brd_host = (up.get("host", "brd.superproxy.io") or "brd.superproxy.io").strip()
+    brd_port = int(up.get("port", 44445) or 44445)
+    brd_online = bool(brd_host and brd_port) and await tcp_check(brd_host, brd_port)
+    return {
+        "host": host,
+        "port": port,
+        "protocol": s.get("proxy_protocol", "http"),
+        "configured": bool(host and port),
+        "online": gateway_online,
+        "upstream": {"provider": up.get("provider", "brightdata"), "host": brd_host, "port": brd_port, "online": brd_online},
+    }
+
+
 # ---------------------------------------------------------------------------
 # Admin: stats, customers, orders, packages, settings
 # ---------------------------------------------------------------------------

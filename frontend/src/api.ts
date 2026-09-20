@@ -176,6 +176,15 @@ export type AdminStatsT = {
   revenue_label: string;
 };
 
+export type GatewayStatusT = {
+  host: string;
+  port: number;
+  protocol: string;
+  configured: boolean;
+  online: boolean;
+  upstream: { provider: string; host: string; port: number; online: boolean };
+};
+
 export type UpstreamT = {
   provider: string;
   host: string;
