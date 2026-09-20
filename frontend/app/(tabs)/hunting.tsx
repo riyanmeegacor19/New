@@ -7,7 +7,7 @@ import { useState } from "react";
 import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, GatewayT, HuntMode, HuntResp, ProxyResultT } from "@/src/api";
+import { api, HuntMode, HuntResp, ProxyAccountT, ProxyResultT } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useToast } from "@/src/components/toast";
 import { useT } from "@/src/settings";
@@ -35,12 +35,12 @@ export default function HuntingScreen() {
   const [result, setResult] = useState<HuntResp | null>(null);
   const [connected, setConnected] = useState<ProxyResultT | null>(null);
 
-  const gatewayQ = useQuery({ queryKey: ["gateway"], queryFn: () => api<GatewayT>("/gateway") });
-  const gw = gatewayQ.data;
-  const srvHost = gw?.configured ? gw.host : user?.server_host;
-  const srvPort = gw?.configured ? gw.port : user?.server_port;
-  const srvUser = gw?.configured ? gw.username : "";
-  const srvPass = gw?.configured ? gw.password : user?.proxy_password;
+  const proxyQ = useQuery({ queryKey: ["proxy-account"], queryFn: () => api<ProxyAccountT>("/proxy-account") });
+  const pa = proxyQ.data;
+  const srvHost = pa?.host || user?.server_host;
+  const srvPort = pa?.port || user?.server_port;
+  const srvUser = pa?.username || user?.username || "";
+  const srvPass = pa?.password || user?.proxy_password;
 
   const copyCreds = async () => {
     const parts = [`${srvHost}:${srvPort}`];
@@ -235,6 +235,18 @@ export default function HuntingScreen() {
                   <Text style={styles.sKey}>{t("port_label")}:</Text>
                   <Text style={[styles.sVal, styles.sPort]}>{srvPort}</Text>
                 </View>
+                {srvUser ? (
+                  <View style={styles.sRow}>
+                    <Text style={styles.sKey}>User:</Text>
+                    <Text testID="success-user" style={styles.sVal} numberOfLines={1}>{srvUser}</Text>
+                  </View>
+                ) : null}
+                {srvPass ? (
+                  <View style={styles.sRow}>
+                    <Text style={styles.sKey}>Pass:</Text>
+                    <Text testID="success-pass" style={styles.sVal} numberOfLines={1}>{srvPass}</Text>
+                  </View>
+                ) : null}
               </View>
             ) : null}
 

@@ -106,6 +106,9 @@ export default function AdminCustomers() {
                   <Pressable testID={`regen-${c.username}`} onPress={() => patchMut.mutate({ id: c.id, body: { regenerate_proxy_password: true } })} style={[styles.smallBtn, { borderColor: colors.border }]}>
                     <Text style={[styles.smallText, { color: colors.onSurfaceSecondary }]}>RESET PASS</Text>
                   </Pressable>
+                  <Pressable testID={`cmd-${c.username}`} onPress={() => { Clipboard.setStringAsync(`# Tambahkan ke /etc/3proxy.cfg lalu jalankan: systemctl restart 3proxy\nusers ${c.username}:CL:${c.proxy_password}\nallow ${c.username}`); toast.show("Perintah VPS disalin \u00b7 paste di SSH VPS", "success"); }} style={[styles.smallBtn, { borderColor: colors.info }]}>
+                    <Text style={[styles.smallText, { color: colors.info }]}>CMD VPS</Text>
+                  </Pressable>
                   <Pressable testID={`del-${c.username}`} onPress={() => delMut.mutate(c.id)} style={[styles.smallBtn, { borderColor: colors.error }]}>
                     <Icon name="trash-can-outline" size={16} color={colors.error} />
                   </Pressable>
