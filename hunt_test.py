@@ -9,7 +9,7 @@ import sys
 from collections import Counter
 
 # Configuration
-BASE_URL = "https://github-proxy.preview.emergentagent.com/api"
+BASE_URL = "https://github-import-setup-11.preview.emergentagent.com/api"
 ADMIN_USERNAME = "idmee"
 ADMIN_PASSWORD = "riyanmee123"
 

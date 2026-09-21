@@ -8,7 +8,7 @@ import json
 import sys
 
 # Configuration
-BASE_URL = "https://github-proxy.preview.emergentagent.com/api"
+BASE_URL = "https://github-import-setup-11.preview.emergentagent.com/api"
 ADMIN_USERNAME = "idmee"
 ADMIN_PASSWORD = "riyanmee123"
 PROXY_GATEWAY_TOKEN = "MhWCrBdJf-KjjEwIY3L0Z6dDT6WCECZSe1pW66Die7M"
