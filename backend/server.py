@@ -34,6 +34,7 @@ JWT_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "43200"))
 DEMO_USERNAME = os.environ.get("DEMO_USERNAME", "idmee")
 DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "riyanmee123")
 PROXY_GATEWAY_TOKEN = os.environ.get("PROXY_GATEWAY_TOKEN", "")
+GATEWAY_CONTROL_PORT = int(os.environ.get("GATEWAY_CONTROL_PORT", "8090"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("riyanmee")
@@ -144,9 +145,11 @@ class IpInfoIn(BaseModel):
 
 
 class HuntIn(BaseModel):
-    target_ip: str
+    country: str = ""      # ISO2 country code (e.g. "us"); empty = global/auto
+    city: str = ""         # optional city (chained with country)
     mode: str = "ultimate"
-    count: int = 24  # how many proxies to return (same /24 as target)
+    count: int = 12        # how many REAL residential proxies to hunt
+    target_ip: str = ""    # deprecated (kept for backward compatibility, ignored)
 
 
 class ProxyServerDoc(BaseDocument):
@@ -702,51 +705,110 @@ async def ip_info(body: IpInfoIn, user: Annotated[UserDoc, Depends(current_user)
     return geo
 
 
+def _country_name(code: str) -> str:
+    cc = (code or "").strip().upper()
+    for c in DEFAULT_COUNTRIES:
+        if c.get("code", "").upper() == cc:
+            return c.get("name", cc)
+    return cc
+
+
 @api_router.post("/hunt")
 async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
+    """Hunt REAL residential proxies via the VPS gateway (IPRoyal upstream).
+
+    Each result points to the VPS gateway with a per-session username so the
+    customer lands on that exact sticky exit IP in the requested country.
+    """
     mode = body.mode if body.mode in HUNT_MODES else "ultimate"
-    ip = body.target_ip.strip()
-    if not valid_ip(ip):
-        raise HTTPException(status_code=400, detail="Masukkan alamat IP target yang valid")
-    geo = await geo_lookup(ip)
-    count = max(1, min(int(body.count or 24), 100))
-    results = hunt_pool(geo, mode, count)
-    owned = await db.proxies.find({"user_id": str(user.id), "deleted_at": None}).to_list(100)
-    owned_results = [
-        {
-            "ip": p["host"],
-            "port": p["port"],
-            "country": geo.get("country", ""),
-            "country_code": geo.get("country_code", ""),
-            "city": geo.get("city", ""),
-            "isp": geo.get("isp", ""),
-            "asn": geo.get("asn", ""),
-            "latency_ms": 12 + idx * 3,
-            "type": p.get("protocol", "socks5").upper(),
-            "owned": True,
-            "label": p.get("label", ""),
-        }
-        for idx, p in enumerate(owned)
-    ]
-    results = owned_results + results
+    s = await get_settings_doc()
+    host = (s.get("proxy_host", "") or "").strip()
+    port = int(s.get("proxy_port", 0) or 0)
+    protocol = s.get("proxy_protocol", "socks5") or "socks5"
+    if not host or not port:
+        raise HTTPException(status_code=503, detail="Gateway proxy belum dikonfigurasi admin")
+
+    country = (body.country or "").strip().lower()
+    if len(country) != 2 or not country.isalpha():
+        country = ""
+    city = (body.city or "").strip().lower()
+    count = max(1, min(int(body.count or 12), 30))
+
+    resolve_url = f"http://{host}:{GATEWAY_CONTROL_PORT}/resolve"
+    try:
+        async with httpx.AsyncClient(timeout=90) as client:
+            resp = await client.post(
+                resolve_url,
+                headers={"Authorization": f"Bearer {PROXY_GATEWAY_TOKEN}"},
+                json={"country": country, "city": city, "count": count},
+            )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="Gateway gagal mencari proxy")
+        data = resp.json()
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=503, detail="Gateway VPS tidak dapat dihubungi")
+
+    proxy_pw = user.proxy_password or ensure_proxy_password(user.username)
+    results = []
+    for item in data.get("results", []):
+        ip = item.get("ip", "")
+        if not ip:
+            continue
+        sess = item.get("session", "")
+        cc = item.get("country_code", "") or country.upper()
+        uname = user.username
+        if country:
+            uname += f"-country-{country}"
+            if city:
+                uname += f"-city-{city}"
+        if sess:
+            uname += f"-session-{sess}"
+        results.append({
+            "ip": ip,
+            "port": port,
+            "country": _country_name(cc),
+            "country_code": cc,
+            "city": item.get("city", ""),
+            "isp": item.get("org", ""),
+            "asn": item.get("org", ""),
+            "latency_ms": int(item.get("latency_ms", 0) or 0),
+            "type": "Residential",
+            "session": sess,
+            "username": uname,
+            "password": proxy_pw,
+            "gateway_host": host,
+            "gateway_port": port,
+            "protocol": protocol,
+        })
+
     mode_label = {
         "ultimate": "ULTIMATE AUTO",
         "full": "FULL SCAN",
         "city": "KOTA SAJA",
         "isp": "ISP SAJA",
     }[mode]
+    loc = f"{city}, {country.upper()}".strip(" ,") if country else "Global"
+    target = {
+        "ip": "", "success": True,
+        "country": _country_name(country.upper()) if country else "Global",
+        "country_code": country.upper(),
+        "region": "", "city": city, "isp": "", "asn": "",
+        "latitude": None, "longitude": None, "timezone": "",
+    }
     await db.history.insert_one(
         HistoryDoc(
             user_id=str(user.id),
             kind="hunt",
             title=f"Hunting {mode_label} · {len(results)} proxy",
-            subtitle=f"{geo['city']}, {geo['country']} · {geo['isp']}".strip(" ,·"),
-            ip=geo["ip"],
+            subtitle=loc,
+            ip="",
             mode=mode,
         ).to_mongo()
     )
     return {
-        "target": geo,
+        "target": target,
         "mode": mode,
         "mode_label": mode_label,
         "count": len(results),

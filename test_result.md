@@ -111,6 +111,21 @@ user_problem_statement: >
   dan endpoint proxy-account untuk pelanggan.
 
 backend:
+  - task: "Real proxy hunting via VPS gateway (IPRoyal residential upstream) - POST /api/hunt"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "REWROTE /api/hunt. Old behaviour generated FAKE same-/24 IPs. New behaviour: input is country (ISO2, optional) + mode + count; backend calls the VPS gateway control API POST http://<proxy_host>:8090/resolve (Bearer PROXY_GATEWAY_TOKEN) which opens N IPRoyal sticky sessions and returns REAL residential exit IPs. Each result includes real ip, gateway_host, gateway_port, a per-session username ({username}-country-{cc}-session-{token}) and the customer's proxy_password so the customer lands on that exact sticky IP. HuntIn model changed (country/city/mode/count; target_ip kept but ignored). Added GATEWAY_CONTROL_PORT env (default 8090) and _country_name helper. Manually verified end-to-end: /resolve returns real distinct US/GB IPs; round-trip confirmed (session from resolve reproduces same exit IP when a real customer connects through gateway). Requires settings.proxy_host + proxy_port configured (already set to 155.138.227.248:1080). Note: DEPLOYED app still runs OLD code until user re-publishes; this task tests the LOCAL backend which shares the same live VPS gateway."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED ALL TESTS (5/5). POST /api/hunt endpoint working perfectly with real IPRoyal residential proxies via VPS gateway. Test 1: Hunt US proxies (count=5) returned 5 REAL residential IPs (158.46.196.218, 107.180.180.69, 76.233.91.233, 96.3.96.69, 67.177.112.105), all with gateway_host=155.138.227.248, port=1080, type=Residential, country_code=US, username pattern 'idmee-country-us-session-<token>', password starts with 'rmx-', session present. Test 2: Hunt GB proxies (count=3) returned 3 results with country_code=GB (90.254.189.62, 86.148.144.254, 86.186.97.26). Test 3: Hunt global (no country, count=3) returned 3 results with various country codes (KE, BR, VE). Test 4: Count clamping verified - count=100 returned 29 results (<=30 as expected), count=0 returned 11 results (>=1 as expected). Test 5: History entries created with kind=hunt. VPS gateway response times: 2-26 seconds (acceptable for real upstream calls). All response structures correct with required fields (target, mode, mode_label, count, results). Real IPRoyal integration working correctly."
+
   - task: "Admin role + seed idmee as admin"
     implemented: true
     working: true
@@ -302,7 +317,8 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Real proxy hunting via VPS gateway (IPRoyal residential upstream) - POST /api/hunt"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -344,3 +360,31 @@ agent_communication:
       (6) History entry created after each hunt with kind=hunt. Oct-3 matching (same /24 subnet) and 
       uniqueness guarantee working as designed. Hunting accessible to both admin and customer roles. 
       No issues found.
+
+    -agent: "main"
+    -message: >
+      RETEST NEEDED - only POST /api/hunt (new IPRoyal-backed real hunting). The VPS gateway control API
+      (http://155.138.227.248:8090/resolve) is LIVE. Scenarios: (1) login admin idmee/riyanmee123.
+      (2) POST /api/hunt {"country":"us","mode":"ultimate","count":5} -> HTTP 200, count>=1, and EACH result
+      MUST contain non-empty real ip, port>0, gateway_host="155.138.227.248", a username matching pattern
+      "<admin>-country-us-session-<token>", non-empty password, type="Residential", and country_code="US".
+      (3) POST /api/hunt {"country":"gb","count":3} -> results country_code should be "GB". (4) POST /api/hunt
+      {"mode":"ultimate","count":3} with NO country -> HTTP 200, results returned (global). (5) count clamp:
+      count=100 -> at most 30 results; count=0 -> >=1. (6) A history entry with kind=hunt is created.
+      NOTE: this hits the real IPRoyal upstream (consumes a tiny bit of bandwidth). Keep counts small.
+      Do NOT test other endpoints. target_ip field is deprecated/ignored.
+    -agent: "testing"
+    -message: >
+      REAL PROXY HUNTING TESTING COMPLETE - ALL TESTS PASSED (5/5). POST /api/hunt endpoint working 
+      perfectly with real IPRoyal residential proxies via VPS gateway control API. Test results: 
+      (1) Hunt US proxies (ultimate mode, count=5): Returned 5 REAL residential IPs with all required 
+      fields validated - gateway_host=155.138.227.248, port=1080, type=Residential, country_code=US, 
+      username pattern 'idmee-country-us-session-<token>', password starts with 'rmx-', session present. 
+      Sample IPs: 158.46.196.218, 107.180.180.69, 76.233.91.233, 96.3.96.69, 67.177.112.105. 
+      (2) Hunt GB proxies (count=3): All 3 results have country_code=GB. Sample IPs: 90.254.189.62, 
+      86.148.144.254, 86.186.97.26. (3) Hunt global (no country, count=3): Returned 3 results with 
+      various country codes (KE, BR, VE) as expected for global hunt. (4) Count clamping verified: 
+      count=100 returned 29 results (<=30 ✓), count=0 returned 11 results (>=1 ✓). (5) History entries 
+      created with kind=hunt. VPS gateway response times: 2-26 seconds (acceptable for real upstream). 
+      All response structures correct with required fields (target, mode, mode_label, count, results). 
+      Real IPRoyal integration working correctly. No issues found.

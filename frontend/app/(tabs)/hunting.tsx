@@ -4,10 +4,10 @@ import * as Clipboard from "expo-clipboard";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useState } from "react";
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, HuntMode, HuntResp, ProxyAccountT, ProxyResultT } from "@/src/api";
+import { api, CountryT, HuntMode, HuntResp, ProxyAccountT, ProxyResultT } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useToast } from "@/src/components/toast";
 import { useT } from "@/src/settings";
@@ -29,11 +29,16 @@ export default function HuntingScreen() {
     { value: "isp", label: t("mode_isp"), desc: t("mode_isp_desc") },
   ];
 
-  const [targetIp, setTargetIp] = useState("");
+  const [country, setCountry] = useState("");
+  const [countryOpen, setCountryOpen] = useState(false);
   const [mode, setMode] = useState<HuntMode>("ultimate");
   const [modeOpen, setModeOpen] = useState(false);
   const [result, setResult] = useState<HuntResp | null>(null);
   const [connected, setConnected] = useState<ProxyResultT | null>(null);
+
+  const countriesQ = useQuery({ queryKey: ["countries"], queryFn: () => api<CountryT[]>("/countries") });
+  const countries = countriesQ.data || [];
+  const activeCountry = countries.find((c) => c.code.toLowerCase() === country.toLowerCase());
 
   const proxyQ = useQuery({ queryKey: ["proxy-account"], queryFn: () => api<ProxyAccountT>("/proxy-account") });
   const pa = proxyQ.data;
@@ -42,16 +47,25 @@ export default function HuntingScreen() {
   const srvUser = pa?.username || user?.username || "";
   const srvPass = pa?.password || user?.proxy_password;
 
+  const proxyString = (p: ProxyResultT) => {
+    const host = p.gateway_host || srvHost;
+    const port = p.gateway_port || p.port || srvPort;
+    const u = p.username || srvUser;
+    const pw = p.password || srvPass;
+    return u ? `${host}:${port}:${u}:${pw}` : `${host}:${port}`;
+  };
+
   const copyCreds = async () => {
-    const parts = [`${srvHost}:${srvPort}`];
-    if (srvUser) parts.push(`${srvUser}:${srvPass}`);
-    else if (srvPass) parts.push(srvPass);
-    await Clipboard.setStringAsync(parts.join(":"));
+    if (connected) {
+      await Clipboard.setStringAsync(proxyString(connected));
+    } else {
+      await Clipboard.setStringAsync(`${srvHost}:${srvPort}${srvUser ? `:${srvUser}:${srvPass}` : ""}`);
+    }
     toast.show(t("creds_copied"), "success");
   };
 
   const huntMut = useMutation({
-    mutationFn: () => api<HuntResp>("/hunt", { method: "POST", json: { target_ip: targetIp.trim(), mode } }),
+    mutationFn: () => api<HuntResp>("/hunt", { method: "POST", json: { country: country.trim().toLowerCase(), mode } }),
     onSuccess: (r) => {
       setResult(r);
       qc.invalidateQueries({ queryKey: ["history"] });
@@ -61,19 +75,19 @@ export default function HuntingScreen() {
   });
 
   const copyOne = async (p: ProxyResultT) => {
-    await Clipboard.setStringAsync(`${p.ip}:${p.port}`);
-    toast.show(`${p.ip}:${p.port} ${t("copied")}`, "success");
+    await Clipboard.setStringAsync(proxyString(p));
+    toast.show(`${p.ip} ${t("copied")}`, "success");
   };
 
   const copyAll = async () => {
     if (!result) return;
-    await Clipboard.setStringAsync(result.results.map((p) => `${p.ip}:${p.port}`).join("\n"));
+    await Clipboard.setStringAsync(result.results.map(proxyString).join("\n"));
     toast.show(`${result.count} proxy ${t("copied")}`, "success");
   };
 
   const exportTxt = async () => {
     if (!result) return;
-    const body = result.results.map((p) => `${p.ip}:${p.port}`).join("\n");
+    const body = result.results.map(proxyString).join("\n");
     try {
       if (Platform.OS === "web") {
         await Clipboard.setStringAsync(body);
@@ -105,8 +119,14 @@ export default function HuntingScreen() {
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
-          <Text style={styles.label}>{t("target_ip_label")}</Text>
-          <TextInput testID="hunt-target-input" style={styles.input} placeholder="109.228.222.82" placeholderTextColor={colors.muted} autoCapitalize="none" autoCorrect={false} value={targetIp} onChangeText={setTargetIp} />
+          <Text style={styles.label}>{t("country_label")}</Text>
+          <Pressable testID="hunt-country-button" onPress={() => setCountryOpen(true)} style={styles.dropdown}>
+            <View style={styles.flex1}>
+              <Text style={styles.dropdownValue}>{activeCountry ? activeCountry.name : t("country_auto")}</Text>
+              <Text style={styles.dropdownDesc}>{activeCountry ? activeCountry.code : "AUTO"}</Text>
+            </View>
+            <Icon name="chevron-down" size={22} color={colors.muted} />
+          </Pressable>
 
           <Text style={styles.label}>{t("mode_hunting")}</Text>
           <Pressable testID="hunt-mode-button" onPress={() => setModeOpen(true)} style={styles.dropdown}>
@@ -119,13 +139,7 @@ export default function HuntingScreen() {
 
           <Pressable
             testID="hunt-start-button"
-            onPress={() => {
-              if (!targetIp.trim()) {
-                toast.show(t("fill_target"), "error");
-                return;
-              }
-              huntMut.mutate();
-            }}
+            onPress={() => huntMut.mutate()}
             style={styles.startBtn}
             disabled={huntMut.isPending}
           >
@@ -162,7 +176,7 @@ export default function HuntingScreen() {
             {result.results.map((p, idx) => (
               <View key={`${p.ip}:${p.port}:${idx}`} testID={`proxy-item-${idx}`} style={styles.proxyRow}>
                 <Pressable style={styles.flex1} onPress={() => copyOne(p)}>
-                  <Text style={styles.proxyIp}>{p.ip}<Text style={styles.proxyPort}>:{p.port}</Text></Text>
+                  <Text style={styles.proxyIp}>{p.ip}</Text>
                   <Text style={styles.proxyMeta} numberOfLines={1}>{[p.city, p.country].filter(Boolean).join(", ")} · {p.isp}</Text>
                   <View style={styles.proxyBadges}>
                     <View style={[styles.typeBadge, { borderColor: p.owned ? colors.borderStrong : colors.border, backgroundColor: p.owned ? colors.brandTertiary : "transparent" }]}>
@@ -204,6 +218,34 @@ export default function HuntingScreen() {
         </Pressable>
       </Modal>
 
+      <Modal visible={countryOpen} transparent animationType="fade" onRequestClose={() => setCountryOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setCountryOpen(false)}>
+          <View style={styles.pickerCard}>
+            <ScrollView style={styles.countryScroll} showsVerticalScrollIndicator={false}>
+              <Pressable testID="country-option-auto" onPress={() => { setCountry(""); setCountryOpen(false); }} style={styles.pickerRow}>
+                <Icon name={!country ? "check-circle" : "circle-outline"} size={22} color={!country ? colors.brandPrimary : colors.muted} />
+                <View style={styles.flex1}>
+                  <Text style={[styles.pickerLabel, { color: !country ? colors.onSurface : colors.onSurfaceSecondary }]}>{t("country_auto")}</Text>
+                  <Text style={styles.pickerDesc}>AUTO</Text>
+                </View>
+              </Pressable>
+              {countries.map((c) => {
+                const selected = c.code.toLowerCase() === country.toLowerCase();
+                return (
+                  <Pressable key={c.code} testID={`country-option-${c.code}`} onPress={() => { setCountry(c.code.toLowerCase()); setCountryOpen(false); }} style={styles.pickerRow}>
+                    <Icon name={selected ? "check-circle" : "circle-outline"} size={22} color={selected ? colors.brandPrimary : colors.muted} />
+                    <View style={styles.flex1}>
+                      <Text style={[styles.pickerLabel, { color: selected ? colors.onSurface : colors.onSurfaceSecondary }]}>{c.name}</Text>
+                      <Text style={styles.pickerDesc}>{c.code}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
+
       <Modal visible={!!connected} transparent animationType="fade" onRequestClose={() => setConnected(null)}>
         <View style={styles.modalBackdrop}>
           <View testID="connect-success-modal" style={styles.successCard}>
@@ -228,25 +270,21 @@ export default function HuntingScreen() {
                 </View>
                 <View style={styles.sRow}>
                   <Text style={styles.sKey}>{t("server_label")}:</Text>
-                  <Text style={styles.sVal} numberOfLines={1}>{srvHost}</Text>
+                  <Text style={styles.sVal} numberOfLines={1}>{connected.gateway_host || srvHost}</Text>
                 </View>
                 <View style={styles.sDivider} />
                 <View style={styles.sRow}>
                   <Text style={styles.sKey}>{t("port_label")}:</Text>
-                  <Text style={[styles.sVal, styles.sPort]}>{srvPort}</Text>
+                  <Text style={[styles.sVal, styles.sPort]}>{connected.gateway_port || connected.port || srvPort}</Text>
                 </View>
-                {srvUser ? (
-                  <View style={styles.sRow}>
-                    <Text style={styles.sKey}>User:</Text>
-                    <Text testID="success-user" style={styles.sVal} numberOfLines={1}>{srvUser}</Text>
-                  </View>
-                ) : null}
-                {srvPass ? (
-                  <View style={styles.sRow}>
-                    <Text style={styles.sKey}>Pass:</Text>
-                    <Text testID="success-pass" style={styles.sVal} numberOfLines={1}>{srvPass}</Text>
-                  </View>
-                ) : null}
+                <View style={styles.sRow}>
+                  <Text style={styles.sKey}>User:</Text>
+                  <Text testID="success-user" style={styles.sVal} numberOfLines={1}>{connected.username || srvUser}</Text>
+                </View>
+                <View style={styles.sRow}>
+                  <Text style={styles.sKey}>Pass:</Text>
+                  <Text testID="success-pass" style={styles.sVal} numberOfLines={1}>{connected.password || srvPass}</Text>
+                </View>
               </View>
             ) : null}
 
@@ -313,6 +351,7 @@ const useStyles = makeStyles((colors) => ({
   emptyText: { color: colors.onSurfaceTertiary, fontSize: font.base, textAlign: "center" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center", padding: spacing.lg },
   pickerCard: { width: "100%", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.sm },
+  countryScroll: { maxHeight: 400 },
   pickerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
   pickerLabel: { fontSize: font.base, fontWeight: "700" },
   pickerDesc: { color: colors.muted, fontSize: font.sm, marginTop: 2 },

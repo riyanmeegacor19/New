@@ -71,6 +71,12 @@ export type ProxyResultT = {
   match?: string;
   owned?: boolean;
   label?: string;
+  session?: string;
+  username?: string;
+  password?: string;
+  gateway_host?: string;
+  gateway_port?: number;
+  protocol?: string;
 };
 
 export type MyProxyT = {
