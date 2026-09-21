@@ -298,6 +298,10 @@ class ProxyAuthorizeIn(BaseModel):
     password: str
 
 
+class ProxyAuthorizeIpIn(BaseModel):
+    ip: str = ""
+
+
 class ProxyUsageIn(BaseModel):
     username: str = ""
     customer_id: str = ""
@@ -1296,6 +1300,52 @@ async def proxy_authorize(body: ProxyAuthorizeIn, _: Annotated[bool, Depends(req
         return {"active": False, "reason": "admin_account"}
     if not user.proxy_password or body.password != user.proxy_password:
         return {"active": False, "reason": "bad_credentials"}
+
+    now = utcnow()
+    exp = user.expires_at
+    if exp and exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    reason = "ok"
+    active = True
+    if getattr(user, "status", "active") != "active":
+        active, reason = False, "suspended"
+    elif not user.package_id:
+        active, reason = False, "no_package"
+    elif not (exp and exp > now):
+        active, reason = False, "expired"
+    else:
+        limit = int(getattr(user, "bandwidth_limit_mb", 0) or 0)
+        used = int(getattr(user, "bandwidth_used_mb", 0) or 0)
+        if limit > 0 and used >= limit:
+            active, reason = False, "quota_exceeded"
+
+    country = (getattr(user, "country", "") or "").strip().lower()
+    return {
+        "active": active,
+        "reason": reason,
+        "customer_id": user.username,
+        "country": country,
+        "package_id": user.package_id,
+    }
+
+
+@api_router.post("/proxy/authorize-ip")
+async def proxy_authorize_ip(body: ProxyAuthorizeIpIn, _: Annotated[bool, Depends(require_gateway)]):
+    """HNPROXY-style IP-whitelist auth. The VPS gateway calls this when a client
+    connects WITHOUT credentials: authorize by the client's public IP if it is
+    in an active (non-admin) customer's whitelist. Returns the same shape as
+    /proxy/authorize so the gateway can reuse country targeting + usage."""
+    ip = (body.ip or "").strip()
+    if not ip:
+        return {"active": False, "reason": "no_ip"}
+    doc = await db.users.find_one({
+        "whitelist_ips": ip,
+        "deleted_at": None,
+        "role": {"$ne": "admin"},
+    })
+    if not doc:
+        return {"active": False, "reason": "not_whitelisted"}
+    user = UserDoc.from_mongo(doc)
 
     now = utcnow()
     exp = user.expires_at

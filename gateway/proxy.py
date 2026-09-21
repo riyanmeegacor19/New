@@ -47,6 +47,10 @@ CONTROL_PORT = int(os.environ.get("CONTROL_PORT", "8090"))  # 0 = disable contro
 PLATFORM_AUTH_URL = os.environ["PLATFORM_AUTH_URL"]
 PLATFORM_USAGE_URL = os.environ["PLATFORM_USAGE_URL"]
 PLATFORM_TOKEN = os.environ["PLATFORM_TOKEN"]
+# HNPROXY-style IP-whitelist auth endpoint (derived from the authorize URL).
+PLATFORM_AUTH_IP_URL = os.environ.get(
+    "PLATFORM_AUTH_IP_URL", PLATFORM_AUTH_URL.replace("/authorize", "/authorize-ip")
+)
 
 # Upstream provider (IPRoyal residential by default). Backwards-compatible with
 # older BRD_* names if present.
@@ -162,6 +166,40 @@ async def _authorize(session: aiohttp.ClientSession, username: str, password: st
     return data
 
 
+def _peer_ip(writer: asyncio.StreamWriter) -> str:
+    try:
+        pn = writer.get_extra_info("peername")
+        return pn[0] if pn else ""
+    except Exception:
+        return ""
+
+
+async def _authorize_ip(session: aiohttp.ClientSession, client_ip: str):
+    """HNPROXY-style: authorize a connection by the client's whitelisted IP."""
+    if not client_ip:
+        return None
+    key = f"ip:{client_ip}"
+    hit = _auth_cache.get(key)
+    now = time.time()
+    if hit and now - hit[0] < AUTH_CACHE_TTL:
+        return hit[1]
+    try:
+        async with session.post(
+            PLATFORM_AUTH_IP_URL,
+            json={"ip": client_ip},
+            headers={"Authorization": f"Bearer {PLATFORM_TOKEN}"},
+            timeout=aiohttp.ClientTimeout(total=8),
+        ) as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+    except Exception as exc:
+        log.warning("authorize-ip failed: %s", exc)
+        return None
+    _auth_cache[key] = (now, data)
+    return data
+
+
 def _upstream_credentials(country: str = "", city: str = "", session: str = "") -> tuple[str, str]:
     """Build (username, password) for IPRoyal with targeting in the password."""
     user = IPROYAL_USERNAME
@@ -243,13 +281,15 @@ async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
             try:
                 method, target, version, headers = _parse_request(await _read_headers(reader))
                 cred = _parse_basic(headers.get("proxy-authorization", ""))
-                if not cred:
-                    _deny(writer)
-                    await writer.drain()
-                    return
-                raw_user, password = cred
-                base_user, tgt = _parse_target_username(raw_user)
-                auth = await _authorize(session, base_user, password)
+                if cred:
+                    raw_user, password = cred
+                    base_user, tgt = _parse_target_username(raw_user)
+                    auth = await _authorize(session, base_user, password)
+                else:
+                    # HNPROXY-style: no credentials -> authorize by whitelisted client IP
+                    tgt = {}
+                    auth = await _authorize_ip(session, _peer_ip(writer))
+                    base_user = (auth or {}).get("customer_id") or ""
                 if not auth or not auth.get("active"):
                     _deny(writer)
                     await writer.drain()
@@ -315,23 +355,36 @@ async def handle_socks5(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 ver, nmethods = await asyncio.wait_for(reader.readexactly(2), timeout=30)
                 if ver != 0x05:
                     return
-                await reader.readexactly(nmethods)
-                await _socks_send(writer, bytes([0x05, 0x02]))
-                auth_ver = (await reader.readexactly(1))[0]
-                if auth_ver != 0x01:
-                    await _socks_send(writer, bytes([0x01, 0x01]))
+                methods = await reader.readexactly(nmethods)
+                tgt = {}
+                if 0x02 in methods:
+                    # username/password auth (RFC 1929) — carries hunt targeting
+                    await _socks_send(writer, bytes([0x05, 0x02]))
+                    auth_ver = (await reader.readexactly(1))[0]
+                    if auth_ver != 0x01:
+                        await _socks_send(writer, bytes([0x01, 0x01]))
+                        return
+                    ulen = (await reader.readexactly(1))[0]
+                    uname = (await reader.readexactly(ulen)).decode("utf-8", "ignore")
+                    plen = (await reader.readexactly(1))[0]
+                    passwd = (await reader.readexactly(plen)).decode("utf-8", "ignore")
+                    base_user, tgt = _parse_target_username(uname)
+                    auth = await _authorize(session, base_user, passwd)
+                    if not auth or not auth.get("active"):
+                        await _socks_send(writer, bytes([0x01, 0x01]))
+                        return
+                    await _socks_send(writer, bytes([0x01, 0x00]))
+                elif 0x00 in methods:
+                    # no-auth -> HNPROXY-style IP whitelist authorization
+                    await _socks_send(writer, bytes([0x05, 0x00]))
+                    auth = await _authorize_ip(session, _peer_ip(writer))
+                    base_user = (auth or {}).get("customer_id") or ""
+                    if not auth or not auth.get("active"):
+                        return
+                else:
+                    await _socks_send(writer, bytes([0x05, 0xFF]))
                     return
-                ulen = (await reader.readexactly(1))[0]
-                uname = (await reader.readexactly(ulen)).decode("utf-8", "ignore")
-                plen = (await reader.readexactly(1))[0]
-                passwd = (await reader.readexactly(plen)).decode("utf-8", "ignore")
-                base_user, tgt = _parse_target_username(uname)
-                auth = await _authorize(session, base_user, passwd)
-                if not auth or not auth.get("active"):
-                    await _socks_send(writer, bytes([0x01, 0x01]))
-                    return
-                await _socks_send(writer, bytes([0x01, 0x00]))
-                country = tgt.get("country") or auth.get("country", "")
+                country = tgt.get("country") or (auth or {}).get("country", "")
                 city = tgt.get("city", "")
                 sess = tgt.get("session", "")
                 ver, cmd, _rsv, atyp = await asyncio.wait_for(reader.readexactly(4), timeout=30)
