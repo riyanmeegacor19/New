@@ -145,11 +145,11 @@ class IpInfoIn(BaseModel):
 
 
 class HuntIn(BaseModel):
-    country: str = ""      # ISO2 country code (e.g. "us"); empty = global/auto
-    city: str = ""         # optional city (chained with country)
+    target_ip: str = ""    # IP target; hunting mencari proxy nyata di lokasi yang sama
+    country: str = ""      # override negara (opsional, ISO2)
+    city: str = ""         # override kota (opsional)
     mode: str = "ultimate"
-    count: int = 12        # how many REAL residential proxies to hunt
-    target_ip: str = ""    # deprecated (kept for backward compatibility, ignored)
+    count: int = 12        # berapa banyak proxy residential nyata yang dicari
 
 
 class ProxyServerDoc(BaseDocument):
@@ -713,12 +713,45 @@ def _country_name(code: str) -> str:
     return cc
 
 
+def _asn_of(text: str) -> str:
+    m = re.search(r"AS\d+", (text or "").upper())
+    return m.group(0) if m else ""
+
+
+def _octet_match(a: str, b: str) -> int:
+    pa, pb = a.split("."), b.split(".")
+    if len(pa) != 4 or len(pb) != 4:
+        return 0
+    n = 0
+    for x, y in zip(pa, pb):
+        if x == y:
+            n += 1
+        else:
+            break
+    return n
+
+
+async def _gateway_resolve(host: str, country: str, city: str, count: int) -> list:
+    """Call the VPS gateway control API to hunt real residential exit IPs."""
+    url = f"http://{host}:{GATEWAY_CONTROL_PORT}/resolve"
+    async with httpx.AsyncClient(timeout=90) as client:
+        resp = await client.post(
+            url,
+            headers={"Authorization": f"Bearer {PROXY_GATEWAY_TOKEN}"},
+            json={"country": country, "city": city, "count": count},
+        )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Gateway gagal mencari proxy")
+    return resp.json().get("results", [])
+
+
 @api_router.post("/hunt")
 async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
-    """Hunt REAL residential proxies via the VPS gateway (IPRoyal upstream).
+    """Hunt REAL residential proxies (IPRoyal) that MATCH a target IP's location.
 
-    Each result points to the VPS gateway with a per-session username so the
-    customer lands on that exact sticky exit IP in the requested country.
+    Enter a target IP -> we geo-locate it (country/city/ISP) -> hunt live IPRoyal
+    residential IPs in the same country & city. Each result is a usable endpoint
+    (VPS gateway + per-session username) landing on that exact sticky exit IP.
     """
     mode = body.mode if body.mode in HUNT_MODES else "ultimate"
     s = await get_settings_doc()
@@ -728,36 +761,50 @@ async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
     if not host or not port:
         raise HTTPException(status_code=503, detail="Gateway proxy belum dikonfigurasi admin")
 
-    country = (body.country or "").strip().lower()
-    if len(country) != 2 or not country.isalpha():
-        country = ""
-    city = (body.city or "").strip().lower()
     count = max(1, min(int(body.count or 12), 30))
 
-    resolve_url = f"http://{host}:{GATEWAY_CONTROL_PORT}/resolve"
+    # 1) Determine target location (from target IP, or explicit overrides).
+    target_geo = None
+    country = (body.country or "").strip().lower()
+    city = (body.city or "").strip().lower()
+    tip = (body.target_ip or "").strip()
+    if tip:
+        if not valid_ip(tip):
+            raise HTTPException(status_code=400, detail="Masukkan alamat IP target yang valid")
+        target_geo = await geo_lookup(tip)
+        if not country:
+            country = (target_geo.get("country_code", "") or "").lower()
+        if not city and mode in ("ultimate", "full", "city"):
+            city = (target_geo.get("city", "") or "").lower().replace(" ", "")
+    if len(country) != 2 or not country.isalpha():
+        country = ""
+    if mode == "isp":
+        city = ""  # ISP mode: widen to whole country for more provider variety
+
+    # 2) Hunt real IPs via the VPS gateway (try country+city, fallback country-only).
     try:
-        async with httpx.AsyncClient(timeout=90) as client:
-            resp = await client.post(
-                resolve_url,
-                headers={"Authorization": f"Bearer {PROXY_GATEWAY_TOKEN}"},
-                json={"country": country, "city": city, "count": count},
-            )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="Gateway gagal mencari proxy")
-        data = resp.json()
+        items = await _gateway_resolve(host, country, city, count)
+        if not items and city:
+            items = await _gateway_resolve(host, country, "", count)
     except HTTPException:
         raise
     except Exception:
         raise HTTPException(status_code=503, detail="Gateway VPS tidak dapat dihubungi")
 
+    # 3) Build usable results + real similarity to the target.
     proxy_pw = user.proxy_password or ensure_proxy_password(user.username)
+    tgt_cc = (target_geo.get("country_code", "") if target_geo else country).upper()
+    tgt_city = (target_geo.get("city", "") if target_geo else "").strip().lower()
+    tgt_asn = _asn_of(f"{target_geo.get('asn','')} {target_geo.get('isp','')}") if target_geo else ""
     results = []
-    for item in data.get("results", []):
+    for item in items:
         ip = item.get("ip", "")
         if not ip:
             continue
         sess = item.get("session", "")
-        cc = item.get("country_code", "") or country.upper()
+        cc = item.get("country_code", "") or tgt_cc
+        rcity = item.get("city", "")
+        org = item.get("org", "")
         uname = user.username
         if country:
             uname += f"-country-{country}"
@@ -765,16 +812,26 @@ async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
                 uname += f"-city-{city}"
         if sess:
             uname += f"-session-{sess}"
+        parts = []
+        if tgt_cc and cc.upper() == tgt_cc:
+            parts.append("Negara")
+        if tgt_city and rcity.strip().lower() == tgt_city:
+            parts.append("Kota")
+        if tgt_asn and tgt_asn in _asn_of(org):
+            parts.append("ISP")
+        match = " + ".join(parts) if parts else (_country_name(cc) or "Global")
         results.append({
             "ip": ip,
             "port": port,
             "country": _country_name(cc),
-            "country_code": cc,
-            "city": item.get("city", ""),
-            "isp": item.get("org", ""),
-            "asn": item.get("org", ""),
+            "country_code": cc.upper(),
+            "city": rcity,
+            "isp": org,
+            "asn": _asn_of(org) or org,
             "latency_ms": int(item.get("latency_ms", 0) or 0),
             "type": "Residential",
+            "match": match,
+            "octet_match": _octet_match(ip, tip) if tip else 0,
             "session": sess,
             "username": uname,
             "password": proxy_pw,
@@ -789,21 +846,23 @@ async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
         "city": "KOTA SAJA",
         "isp": "ISP SAJA",
     }[mode]
-    loc = f"{city}, {country.upper()}".strip(" ,") if country else "Global"
-    target = {
-        "ip": "", "success": True,
-        "country": _country_name(country.upper()) if country else "Global",
-        "country_code": country.upper(),
-        "region": "", "city": city, "isp": "", "asn": "",
-        "latitude": None, "longitude": None, "timezone": "",
-    }
+    if target_geo:
+        target = target_geo
+    else:
+        target = {
+            "ip": "", "success": True,
+            "country": _country_name(country.upper()) if country else "Global",
+            "country_code": country.upper(), "region": "", "city": city,
+            "isp": "", "asn": "", "latitude": None, "longitude": None, "timezone": "",
+        }
+    loc = f"{target.get('city','')}, {target.get('country','')}".strip(" ,") or "Global"
     await db.history.insert_one(
         HistoryDoc(
             user_id=str(user.id),
             kind="hunt",
             title=f"Hunting {mode_label} · {len(results)} proxy",
             subtitle=loc,
-            ip="",
+            ip=target.get("ip", ""),
             mode=mode,
         ).to_mongo()
     )
