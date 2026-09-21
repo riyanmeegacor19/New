@@ -56,6 +56,16 @@ User (Bahasa Indonesia) meminta aplikasi proxy bergaya "HN Proxy V1", lalu membe
   Persis seperti hnproxy.web.id (target 149.126.15.67 -> 149.126.15.x OCTET 3/4, RIYADH/AsDiriyah AS35819 SA).
   Catatan: IP yang ditampilkan = target /24 (aspirasi), exit nyata dirutekan gateway ke lokasi/ASN sama.
   _gateway_resolve_pool / mode BOOST real tidak dipakai lagi (disimpan di kode utk referensi). Verified screenshot (list 3/4 + Success modal).
+- Success modal disamakan dgn HNPROXY (2026-09-21): baris User & Pass dihapus; ASN menampilkan nama
+  lengkap ISP (connected.isp || connected.asn, mis "AS35819 Etihad Etisalat, a joint stock company").
+  Tombol SALIN KREDENSIAL tetap ada utk menyalin host:port:user:pass. Verified screenshot.
+- Proxy USABLE (opsi A, 2026-09-21): hunt results kini menampilkan endpoint gateway ASLI dari settings
+  (proxy_host:proxy_port = 155.138.227.248:1080 socks5), bukan branding server.riyanmee.web.id:5245.
+  Backend /api/proxy/authorize TERBUKTI active:true utk customer aktif (hunter1/day30) dgn PROXY_GATEWAY_TOKEN;
+  admin (idmee) ditolak (admin_account). Uji: gateway live 155.138.227.248 masih 407 utk user app karena VPS
+  mengarah ke backend lain. SISA LANGKAH DI VPS: set PLATFORM_AUTH_URL=<backend>/api/proxy/authorize,
+  PLATFORM_USAGE_URL=<backend>/api/proxy/usage, PLATFORM_TOKEN=PROXY_GATEWAY_TOKEN + IPRoyal creds.
+  Test customer: hunter1 / hunter123 (proxy pass rmx-726ad07bc3). Verified via curl + screenshot.
 
 
 ## Reseller Platform (2026-09-20) — FASE 1

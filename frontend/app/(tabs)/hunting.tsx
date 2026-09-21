@@ -276,7 +276,7 @@ export default function HuntingScreen() {
                 </View>
                 <View style={styles.sRow}>
                   <Text style={styles.sKey}>{t("asn_label")}:</Text>
-                  <Text style={styles.sVal} numberOfLines={1}>{connected.asn || connected.isp}</Text>
+                  <Text style={styles.sVal} numberOfLines={2}>{connected.isp || connected.asn}</Text>
                 </View>
                 <View style={styles.sRow}>
                   <Text style={styles.sKey}>{t("server_label")}:</Text>
@@ -286,14 +286,6 @@ export default function HuntingScreen() {
                 <View style={styles.sRow}>
                   <Text style={styles.sKey}>{t("port_label")}:</Text>
                   <Text style={[styles.sVal, styles.sPort]}>{connected.gateway_port || connected.port || srvPort}</Text>
-                </View>
-                <View style={styles.sRow}>
-                  <Text style={styles.sKey}>User:</Text>
-                  <Text testID="success-user" style={styles.sVal} numberOfLines={1}>{connected.username || srvUser}</Text>
-                </View>
-                <View style={styles.sRow}>
-                  <Text style={styles.sKey}>Pass:</Text>
-                  <Text testID="success-pass" style={styles.sVal} numberOfLines={1}>{connected.password || srvPass}</Text>
                 </View>
               </View>
             ) : null}

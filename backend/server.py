@@ -817,8 +817,10 @@ async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
         raise HTTPException(status_code=400, detail="Masukkan alamat IP target dulu")
 
     proxy_pw = user.proxy_password or ensure_proxy_password(user.username)
-    srv_host = (user.server_host or host)
-    srv_port = int(user.server_port or port)
+    # Show the REAL, reachable gateway endpoint (admin-configured settings) so the
+    # credentials can be pasted straight into any proxy client / super proxy.
+    srv_host = host or user.server_host
+    srv_port = int(port or user.server_port)
 
     tgt_cc = (target_geo.get("country_code", "") or country).upper()
     tgt_country = target_geo.get("country", "") or _country_name(tgt_cc)
