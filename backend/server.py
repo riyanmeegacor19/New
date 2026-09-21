@@ -745,6 +745,33 @@ async def _gateway_resolve(host: str, country: str, city: str, count: int) -> li
     return resp.json().get("results", [])
 
 
+async def _gateway_resolve_pool(host: str, country: str, city: str, rounds: int, per_round: int = 30) -> list:
+    """Gather a WIDER candidate pool by firing several /resolve rounds in
+    parallel (each capped at 30 sessions by the gateway). Dedupe by IP.
+
+    A larger real pool means a better chance of finding proxies whose IP is
+    in the SAME /24 as the target (octet 3/4). All IPs remain real & usable."""
+    rounds = max(1, min(rounds, 4))
+    tasks = [_gateway_resolve(host, country, city, per_round) for _ in range(rounds)]
+    batches = await asyncio.gather(*tasks, return_exceptions=True)
+    # If every round raised, surface the failure so the caller returns 5xx.
+    if all(isinstance(b, Exception) for b in batches):
+        for b in batches:
+            if isinstance(b, HTTPException):
+                raise b
+        raise HTTPException(status_code=503, detail="Gateway VPS tidak dapat dihubungi")
+    seen: set = set()
+    pool: list = []
+    for b in batches:
+        if isinstance(b, list):
+            for item in b:
+                ip = item.get("ip", "")
+                if ip and ip not in seen:
+                    seen.add(ip)
+                    pool.append(item)
+    return pool
+
+
 @api_router.post("/hunt")
 async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
     """Hunt REAL residential proxies (IPRoyal) that MATCH a target IP's location.
@@ -781,11 +808,14 @@ async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
     if mode == "isp":
         city = ""  # ISP mode: widen to whole country for more provider variety
 
-    # 2) Hunt real IPs via the VPS gateway (try country+city, fallback country-only).
+    # 2) Hunt real IPs via the VPS gateway. When a target IP is given we widen
+    # the candidate pool (several parallel rounds) so we can keep the proxies
+    # whose IP is CLOSEST to the target (highest octet match / same /24).
+    rounds = 3 if tip else 1
     try:
-        items = await _gateway_resolve(host, country, city, count)
+        items = await _gateway_resolve_pool(host, country, city, rounds)
         if not items and city:
-            items = await _gateway_resolve(host, country, "", count)
+            items = await _gateway_resolve_pool(host, country, "", rounds)
     except HTTPException:
         raise
     except Exception:
@@ -839,6 +869,19 @@ async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
             "gateway_port": port,
             "protocol": protocol,
         })
+
+    # Rank the wider pool so the proxies CLOSEST to the target IP come first:
+    # more matching octets (same /24 > same /16) -> same ASN -> lower latency.
+    if tip:
+        results.sort(
+            key=lambda r: (
+                r.get("octet_match", 0),
+                1 if (tgt_asn and r.get("asn") == tgt_asn) else 0,
+                -int(r.get("latency_ms") or 9999),
+            ),
+            reverse=True,
+        )
+        results = results[:count]
 
     mode_label = {
         "ultimate": "ULTIMATE AUTO",

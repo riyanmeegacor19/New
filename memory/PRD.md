@@ -43,6 +43,12 @@ User (Bahasa Indonesia) meminta aplikasi proxy bergaya "HN Proxy V1", lalu membe
   Validasi IPv4/IPv6 di client + toast. Modal & state negara dihapus. Verified via screenshot (12 proxy Jeddah, SA).
 - Hunting B+C: hasil diurutkan berdasar octet_match menurun (paling mirip di atas); kartu octet>=2
   disorot (border hijau kiri + latar brandTertiary + badge "MIRIP"). useMemo sortedResults. Verified screenshot.
+- Hunting BOOST (opsi A, 2026-09-21): saat ada target_ip, backend memperbesar pool kandidat dengan
+  _gateway_resolve_pool (3 ronde x30 sesi paralel, dedupe by IP ~90 kandidat), lalu rank
+  (octet_match desc -> ASN sama -> latency asc) dan ambil top `count`. Semua IP residential NYATA.
+  Hasil: 2/4 (blok ISP sama) kini andal muncul & diprioritaskan; 3/4 (persis /24) tetap jarang
+  karena provider residential tidak mengizinkan pilih /24 (riset IPRoyal/BrightData/Oxylabs).
+  Durasi hunt ~25s (ronde paralel). Verified via curl + screenshot (3x 2/4 tersorot di atas).
 
 
 ## Reseller Platform (2026-09-20) — FASE 1
