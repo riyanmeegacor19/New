@@ -41,6 +41,8 @@ User (Bahasa Indonesia) meminta aplikasi proxy bergaya "HN Proxy V1", lalu membe
   Kirim {target_ip, mode} ke POST /api/hunt (backend sudah geo-lookup target -> resolve gateway).
   Setiap hasil menampilkan "KEMIRIPAN: OCTET x/4" (field octet_match), kota/negara/ISP/ASN, tombol HUBUNGKAN.
   Validasi IPv4/IPv6 di client + toast. Modal & state negara dihapus. Verified via screenshot (12 proxy Jeddah, SA).
+- Hunting B+C: hasil diurutkan berdasar octet_match menurun (paling mirip di atas); kartu octet>=2
+  disorot (border hijau kiri + latar brandTertiary + badge "MIRIP"). useMemo sortedResults. Verified screenshot.
 
 
 ## Reseller Platform (2026-09-20) — FASE 1

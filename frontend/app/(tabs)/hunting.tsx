@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -125,6 +125,11 @@ export default function HuntingScreen() {
 
   const activeMode = MODES.find((m) => m.value === mode)!;
 
+  const sortedResults = useMemo(
+    () => (result ? [...result.results].sort((a, b) => (b.octet_match ?? 0) - (a.octet_match ?? 0)) : []),
+    [result],
+  );
+
   return (
     <View style={styles.screen}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
@@ -194,24 +199,35 @@ export default function HuntingScreen() {
               </Pressable>
             </View>
 
-            {result.results.map((p, idx) => (
-              <View key={`${p.ip}:${p.port}:${idx}`} testID={`proxy-item-${idx}`} style={styles.proxyRow}>
-                <Pressable style={styles.flex1} onPress={() => copyOne(p)}>
-                  <Text style={styles.proxyIp}>{p.ip}</Text>
-                  <Text style={styles.similarity}>{t("similarity")}: OCTET {p.octet_match ?? 0}/4</Text>
-                  <Text style={styles.proxyMeta} numberOfLines={1}>{[p.city, p.country].filter(Boolean).join(", ")} · {p.isp}</Text>
-                  <View style={styles.proxyBadges}>
-                    <View style={[styles.typeBadge, { borderColor: p.owned ? colors.borderStrong : colors.border, backgroundColor: p.owned ? colors.brandTertiary : "transparent" }]}>
-                      <Text style={[styles.typeText, { color: p.owned ? colors.onBrandTertiary : colors.onSurfaceTertiary }]}>{p.owned ? t("owned_badge") : p.type}</Text>
+            {sortedResults.map((p, idx) => {
+              const strong = (p.octet_match ?? 0) >= 2;
+              return (
+                <View key={`${p.ip}:${p.port}:${idx}`} testID={`proxy-item-${idx}`} style={[styles.proxyRow, strong && styles.proxyRowStrong]}>
+                  <Pressable style={styles.flex1} onPress={() => copyOne(p)}>
+                    <Text style={styles.proxyIp}>{p.ip}</Text>
+                    <View style={styles.simRow}>
+                      <Text style={[styles.similarity, strong && styles.similarityStrong]}>{t("similarity")}: OCTET {p.octet_match ?? 0}/4</Text>
+                      {strong ? (
+                        <View style={styles.bestBadge}>
+                          <Icon name="star-four-points" size={9} color={colors.onBrandPrimary} />
+                          <Text style={styles.bestBadgeText}>{t("best_match")}</Text>
+                        </View>
+                      ) : null}
                     </View>
-                    <Text style={styles.latency}>{p.latency_ms}ms</Text>
-                  </View>
-                </Pressable>
-                <Pressable testID={`proxy-connect-${idx}`} onPress={() => setConnected(p)} style={styles.connectBtn}>
-                  <Text style={styles.connectText}>{t("connect")}</Text>
-                </Pressable>
-              </View>
-            ))}
+                    <Text style={styles.proxyMeta} numberOfLines={1}>{[p.city, p.country].filter(Boolean).join(", ")} · {p.isp}</Text>
+                    <View style={styles.proxyBadges}>
+                      <View style={[styles.typeBadge, { borderColor: p.owned ? colors.borderStrong : colors.border, backgroundColor: p.owned ? colors.brandTertiary : "transparent" }]}>
+                        <Text style={[styles.typeText, { color: p.owned ? colors.onBrandTertiary : colors.onSurfaceTertiary }]}>{p.owned ? t("owned_badge") : p.type}</Text>
+                      </View>
+                      <Text style={styles.latency}>{p.latency_ms}ms</Text>
+                    </View>
+                  </Pressable>
+                  <Pressable testID={`proxy-connect-${idx}`} onPress={() => setConnected(p)} style={[styles.connectBtn, strong && styles.connectBtnStrong]}>
+                    <Text style={styles.connectText}>{t("connect")}</Text>
+                  </Pressable>
+                </View>
+              );
+            })}
           </View>
         ) : (
           <View style={styles.emptyCard}>
@@ -319,12 +335,18 @@ const useStyles = makeStyles((colors) => ({
   smallBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs, backgroundColor: colors.brandTertiary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingVertical: spacing.md },
   smallBtnText: { color: colors.onBrandTertiary, fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
   proxyRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider, paddingVertical: spacing.md },
+  proxyRowStrong: { borderLeftWidth: 3, borderLeftColor: colors.brandPrimary, backgroundColor: colors.brandTertiary, borderRadius: radius.md, paddingLeft: spacing.sm, marginTop: spacing.xs },
   proxyIp: { color: colors.onSurface, fontSize: font.base, fontFamily: mono, fontWeight: "700" },
-  similarity: { color: colors.brandPrimary, fontSize: 11, fontWeight: "800", letterSpacing: 0.5, marginTop: 4, fontFamily: mono },
+  simRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: 4 },
+  similarity: { color: colors.onSurfaceTertiary, fontSize: 11, fontWeight: "800", letterSpacing: 0.5, fontFamily: mono },
+  similarityStrong: { color: colors.brandPrimary },
+  bestBadge: { flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: colors.brandPrimary, borderRadius: radius.pill, paddingHorizontal: 7, paddingVertical: 2 },
+  bestBadgeText: { color: colors.onBrandPrimary, fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
   proxyPort: { color: colors.brandPrimary },
   proxyMeta: { color: colors.onSurfaceTertiary, fontSize: font.sm, marginTop: 2 },
   proxyBadges: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },
   connectBtn: { height: 40, paddingHorizontal: spacing.lg, borderRadius: radius.md, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center" },
+  connectBtnStrong: { shadowColor: colors.brandPrimary, shadowOpacity: 0.5, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
   connectText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: "800", letterSpacing: 1 },
   typeBadge: { borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2 },
   typeText: { fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
