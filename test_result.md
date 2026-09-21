@@ -297,6 +297,85 @@ backend:
           gateway endpoints working perfectly with correct authentication, authorization logic, 
           bandwidth tracking, and quota enforcement.
 
+  - task: "HNPROXY-style hunt (same /24, octet 3/4) + credentials point to REAL gateway - POST /api/hunt"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: >
+          CHANGED per user (replicate hnproxy.web.id): POST /api/hunt now REQUIRES target_ip. It
+          geo-locates the target (ipwho.is) then GENERATES same-/24 IPs (same_subnet_ips) so every
+          result shares the target's first 3 octets => octet_match=3 (OCTET 3/4). Location info
+          (country/country_code/city/isp/asn) comes from the target geo. Credentials now point to the
+          REAL reachable gateway from settings (gateway_host=proxy_host=155.138.227.248,
+          gateway_port=proxy_port=1080, protocol=socks5, port=1080) instead of the branded
+          server.riyanmee.web.id:5245. username pattern '{username}-country-{cc}-city-{city}-session-{hex8}',
+          password=user proxy_password. Results sorted by octet_match desc then latency. Fast (no upstream
+          calls). VERIFY: (1) POST /api/hunt {"target_ip":"149.126.15.67","mode":"full","count":12} as an
+          authenticated user (use admin idmee OR customer hunter1) -> HTTP 200, count==12, EVERY result ip
+          starts with "149.126.15." and octet_match==3, gateway_host=="155.138.227.248", gateway_port==1080,
+          protocol=="socks5", non-empty username+password, type=="Residential". (2) target city/country in
+          response.target reflects real geo (Ad Dir'iyah / SA, asn AS35819). (3) invalid target_ip
+          "not-an-ip" -> HTTP 400. (4) empty target_ip -> HTTP 400. (5) history entry kind=hunt created.
+        -working: true
+        -agent: "testing"
+        -comment: >
+          PASSED ALL TESTS (6/6). POST /api/hunt endpoint working perfectly with HNPROXY-style same /24 
+          subnet matching. Test results: (1) Admin login successful. (2) Customer login successful. 
+          (3) Hunt with target_ip="149.126.15.67", mode="full", count=12 returned exactly 12 results. 
+          ALL 12 results verified: IP starts with "149.126.15." (octet_match=3), gateway_host="155.138.227.248", 
+          gateway_port=1080, protocol="socks5", username non-empty (pattern: idmee-country-sa-city-addir'iyah-session-<hex8>), 
+          password non-empty (rmx-c01ef22e63), type="Residential". Sample IPs: 149.126.15.96, 149.126.15.101, 
+          149.126.15.100, 149.126.15.226, 149.126.15.39, 149.126.15.82, 149.126.15.118, 149.126.15.20, 
+          149.126.15.136, 149.126.15.23, 149.126.15.243, 149.126.15.160. (4) Target geo correctly shows 
+          country_code=SA (Saudi Arabia), city=Ad Dir'iyah, asn=AS35819. (5) Invalid IP "not-an-ip" 
+          correctly rejected with HTTP 400. (6) Empty target_ip correctly rejected with HTTP 400. 
+          (7) History entry with kind=hunt created and verified. All HNPROXY-style requirements met: 
+          same /24 subnet (octet 3/4 match), credentials point to real gateway (155.138.227.248:1080), 
+          real geo-location data. No issues found.
+
+  - task: "Proxy authorize/usage point-of-truth for gateway (customer active, admin rejected) - POST /api/proxy/authorize + /api/proxy/usage"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: >
+          Re-verify after hunt change (endpoints themselves unchanged but critical for usability). Use
+          Authorization: Bearer <PROXY_GATEWAY_TOKEN> from backend/.env. Test customer already seeded:
+          username 'hunter1', proxy_password 'rmx-726ad07bc3', package day30 active, country sa. Scenarios:
+          (1) authorize {username:"hunter1", password:"rmx-726ad07bc3"} + valid token -> active:true,
+          reason:"ok", country:"sa", package_id:"day30". (2) authorize admin {username:"idmee",
+          password:"rmx-c01ef22e63"} -> active:false reason:"admin_account". (3) wrong password ->
+          active:false reason:"bad_credentials". (4) no token / wrong token -> HTTP 401. (5) usage
+          {username:"hunter1", bytes_up:1048576, bytes_down:1048576} + token -> ok:true and
+          bandwidth_used_mb increases. Do NOT delete hunter1 (used as the standing test customer).
+        -working: true
+        -agent: "testing"
+        -comment: >
+          PASSED ALL TESTS (6/6). Both /api/proxy/authorize and /api/proxy/usage endpoints working 
+          perfectly. Test results: (1) Authorize hunter1 with correct credentials (username="hunter1", 
+          password="rmx-726ad07bc3") + valid Bearer token (PROXY_GATEWAY_TOKEN) returned HTTP 200, 
+          active=true, reason="ok", country="sa", package_id="day30", customer_id="hunter1". 
+          (2) Authorize admin account (username="idmee", password="rmx-c01ef22e63") correctly rejected 
+          with HTTP 200, active=false, reason="admin_account". (3) Authorize hunter1 with wrong password 
+          ("WRONGPASS") correctly rejected with HTTP 200, active=false, reason="bad_credentials". 
+          (4) Authorize without Authorization header correctly rejected with HTTP 401. (5) Authorize 
+          with wrong Bearer token ("wrongtoken123") correctly rejected with HTTP 401. (6) Usage report 
+          with username="hunter1", bytes_up=1048576 (1MB), bytes_down=1048576 (1MB) returned HTTP 200, 
+          ok=true, bandwidth_used_mb=2. Verified via GET /api/admin/customers that bandwidth_used_mb 
+          increased from 0MB to 2MB and persisted correctly. Gateway authentication (PROXY_GATEWAY_TOKEN) 
+          working correctly. Customer hunter1 NOT deleted as requested. All scenarios verified successfully.
+
 frontend:
   - task: "Reseller frontend (admin panel + customer proxy/buy screens)"
     implemented: true
@@ -313,12 +392,13 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 3
+  test_sequence: 4
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Real proxy hunting via VPS gateway (IPRoyal residential upstream) - POST /api/hunt"
+    - "HNPROXY-style hunt (same /24, octet 3/4) + credentials point to REAL gateway - POST /api/hunt"
+    - "Proxy authorize/usage point-of-truth for gateway (customer active, admin rejected) - POST /api/proxy/authorize + /api/proxy/usage"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -388,3 +468,42 @@ agent_communication:
       created with kind=hunt. VPS gateway response times: 2-26 seconds (acceptable for real upstream). 
       All response structures correct with required fields (target, mode, mode_label, count, results). 
       Real IPRoyal integration working correctly. No issues found.
+
+    -agent: "main"
+    -message: >
+      RETEST after HNPROXY-style change. Test ONLY the two current_focus backend tasks. Auth: obtain
+      JWT via POST /api/auth/login. Gateway endpoints need Authorization: Bearer <PROXY_GATEWAY_TOKEN>
+      (read from backend/.env, key PROXY_GATEWAY_TOKEN). Standing test customer already exists:
+      login idmee/riyanmee123 (admin) and customer hunter1/hunter123 (proxy_password rmx-726ad07bc3,
+      package day30, country sa). (A) POST /api/hunt {"target_ip":"149.126.15.67","mode":"full","count":12}
+      with a valid JWT (admin OR customer) -> HTTP 200, count==12, EVERY result: ip startswith "149.126.15.",
+      octet_match==3, gateway_host=="155.138.227.248", gateway_port==1080, protocol=="socks5", username+password
+      non-empty, type=="Residential"; response.target.city/country_code reflect real geo; invalid ip "not-an-ip"
+      -> 400; empty target_ip -> 400; history kind=hunt created. (B) /api/proxy/authorize + /api/proxy/usage
+      with PROXY_GATEWAY_TOKEN: hunter1+rmx-726ad07bc3 -> active:true reason ok country sa package day30;
+      idmee -> active:false reason admin_account; wrong password -> active:false bad_credentials; no/wrong token
+      -> 401; usage {username:hunter1, bytes_up:1048576, bytes_down:1048576} -> ok:true and bandwidth_used_mb up.
+      Do NOT delete hunter1. Do NOT test other endpoints/frontend.
+    -agent: "testing"
+    -message: >
+      HNPROXY-STYLE HUNT + PROXY GATEWAY TESTING COMPLETE - ALL TESTS PASSED (12/12). Both backend tasks 
+      verified working perfectly. Test A (POST /api/hunt): (1) Admin and customer login successful. 
+      (2) Hunt with target_ip="149.126.15.67", mode="full", count=12 returned exactly 12 results. ALL 12 
+      results verified with correct same /24 subnet matching: IP starts with "149.126.15." (octet_match=3), 
+      gateway_host="155.138.227.248", gateway_port=1080, protocol="socks5", username non-empty (pattern: 
+      idmee-country-sa-city-addir'iyah-session-<hex8>), password non-empty (rmx-c01ef22e63), 
+      type="Residential". Sample IPs: 149.126.15.96, 149.126.15.101, 149.126.15.100, 149.126.15.226, 
+      149.126.15.39, 149.126.15.82, 149.126.15.118, 149.126.15.20, 149.126.15.136, 149.126.15.23, 
+      149.126.15.243, 149.126.15.160. (3) Target geo correctly shows country_code=SA (Saudi Arabia), 
+      city=Ad Dir'iyah, asn=AS35819. (4) Invalid IP "not-an-ip" correctly rejected with HTTP 400. 
+      (5) Empty target_ip correctly rejected with HTTP 400. (6) History entry with kind=hunt created. 
+      Test B (POST /api/proxy/authorize + /api/proxy/usage): (1) Authorize hunter1 with correct credentials 
+      + valid Bearer token returned active=true, reason="ok", country="sa", package_id="day30". 
+      (2) Authorize admin account (idmee) correctly rejected with active=false, reason="admin_account". 
+      (3) Authorize with wrong password correctly rejected with active=false, reason="bad_credentials". 
+      (4) Authorize without Authorization header correctly rejected with HTTP 401. (5) Authorize with 
+      wrong Bearer token correctly rejected with HTTP 401. (6) Usage report (1MB up + 1MB down = 2MB) 
+      returned ok=true, bandwidth_used_mb increased from 0MB to 2MB (verified via admin API). Customer 
+      hunter1 NOT deleted as requested. All HNPROXY-style requirements met: same /24 subnet (octet 3/4 
+      match), credentials point to real gateway (155.138.227.248:1080), real geo-location data. Gateway 
+      authentication and bandwidth tracking working correctly. No issues found.
