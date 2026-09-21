@@ -8,7 +8,7 @@ import time
 import json
 
 # Backend URL from frontend/.env
-BACKEND_URL = "https://github-import-setup-11.preview.emergentagent.com/api"
+BACKEND_URL = "https://dependency-installer-13.preview.emergentagent.com/api"
 
 # Admin credentials from test_credentials.md
 ADMIN_USERNAME = "idmee"
