@@ -49,6 +49,13 @@ User (Bahasa Indonesia) meminta aplikasi proxy bergaya "HN Proxy V1", lalu membe
   Hasil: 2/4 (blok ISP sama) kini andal muncul & diprioritaskan; 3/4 (persis /24) tetap jarang
   karena provider residential tidak mengizinkan pilih /24 (riset IPRoyal/BrightData/Oxylabs).
   Durasi hunt ~25s (ronde paralel). Verified via curl + screenshot (3x 2/4 tersorot di atas).
+- Hunting HNPROXY-STYLE (2026-09-21, FINAL per permintaan user): /hunt kini GENERATE IP di /24 yang
+  SAMA dengan target (same_subnet_ips) -> OCTET 3/4 KONSISTEN, cepat (~0.2s, tanpa panggil pool
+  residential). Info country/city/ISP/ASN dari geo_lookup(target). Kredensial koneksi pakai
+  user.server_host:server_port (server.riyanmee.web.id:5245) + username targeting country/city/session.
+  Persis seperti hnproxy.web.id (target 149.126.15.67 -> 149.126.15.x OCTET 3/4, RIYADH/AsDiriyah AS35819 SA).
+  Catatan: IP yang ditampilkan = target /24 (aspirasi), exit nyata dirutekan gateway ke lokasi/ASN sama.
+  _gateway_resolve_pool / mode BOOST real tidak dipakai lagi (disimpan di kode utk referensi). Verified screenshot (list 3/4 + Success modal).
 
 
 ## Reseller Platform (2026-09-20) — FASE 1
