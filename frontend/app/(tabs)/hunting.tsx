@@ -4,10 +4,10 @@ import * as Clipboard from "expo-clipboard";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useState } from "react";
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, CountryT, HuntMode, HuntResp, ProxyAccountT, ProxyResultT } from "@/src/api";
+import { api, HuntMode, HuntResp, ProxyAccountT, ProxyResultT } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useToast } from "@/src/components/toast";
 import { useT } from "@/src/settings";
@@ -29,16 +29,11 @@ export default function HuntingScreen() {
     { value: "isp", label: t("mode_isp"), desc: t("mode_isp_desc") },
   ];
 
-  const [country, setCountry] = useState("");
-  const [countryOpen, setCountryOpen] = useState(false);
+  const [targetIp, setTargetIp] = useState("");
   const [mode, setMode] = useState<HuntMode>("ultimate");
   const [modeOpen, setModeOpen] = useState(false);
   const [result, setResult] = useState<HuntResp | null>(null);
   const [connected, setConnected] = useState<ProxyResultT | null>(null);
-
-  const countriesQ = useQuery({ queryKey: ["countries"], queryFn: () => api<CountryT[]>("/countries") });
-  const countries = countriesQ.data || [];
-  const activeCountry = countries.find((c) => c.code.toLowerCase() === country.toLowerCase());
 
   const proxyQ = useQuery({ queryKey: ["proxy-account"], queryFn: () => api<ProxyAccountT>("/proxy-account") });
   const pa = proxyQ.data;
@@ -65,7 +60,7 @@ export default function HuntingScreen() {
   };
 
   const huntMut = useMutation({
-    mutationFn: () => api<HuntResp>("/hunt", { method: "POST", json: { country: country.trim().toLowerCase(), mode } }),
+    mutationFn: () => api<HuntResp>("/hunt", { method: "POST", json: { target_ip: targetIp.trim(), mode } }),
     onSuccess: (r) => {
       setResult(r);
       qc.invalidateQueries({ queryKey: ["history"] });
@@ -73,6 +68,26 @@ export default function HuntingScreen() {
     },
     onError: (e: Error) => toast.show(e.message, "error"),
   });
+
+  const startHunt = () => {
+    const ip = targetIp.trim();
+    if (!ip) {
+      toast.show(t("fill_target"), "error");
+      return;
+    }
+    // Basic IPv4 / IPv6 sanity check (backend validates strictly too)
+    const isIpv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(ip);
+    const isIpv6 = ip.includes(":") && ip.length >= 3;
+    if (!isIpv4 && !isIpv6) {
+      toast.show(t("invalid_ip"), "error");
+      return;
+    }
+    if (isIpv4 && ip.split(".").some((o) => Number(o) > 255)) {
+      toast.show(t("invalid_ip"), "error");
+      return;
+    }
+    huntMut.mutate();
+  };
 
   const copyOne = async (p: ProxyResultT) => {
     await Clipboard.setStringAsync(proxyString(p));
@@ -119,14 +134,20 @@ export default function HuntingScreen() {
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
-          <Text style={styles.label}>{t("country_label")}</Text>
-          <Pressable testID="hunt-country-button" onPress={() => setCountryOpen(true)} style={styles.dropdown}>
-            <View style={styles.flex1}>
-              <Text style={styles.dropdownValue}>{activeCountry ? activeCountry.name : t("country_auto")}</Text>
-              <Text style={styles.dropdownDesc}>{activeCountry ? activeCountry.code : "AUTO"}</Text>
-            </View>
-            <Icon name="chevron-down" size={22} color={colors.muted} />
-          </Pressable>
+          <Text style={styles.label}>{t("target_ip_label")}</Text>
+          <TextInput
+            testID="hunt-target-input"
+            value={targetIp}
+            onChangeText={setTargetIp}
+            placeholder="31.166.28.143"
+            placeholderTextColor={colors.muted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
+            returnKeyType="search"
+            onSubmitEditing={startHunt}
+            style={styles.input}
+          />
 
           <Text style={styles.label}>{t("mode_hunting")}</Text>
           <Pressable testID="hunt-mode-button" onPress={() => setModeOpen(true)} style={styles.dropdown}>
@@ -139,7 +160,7 @@ export default function HuntingScreen() {
 
           <Pressable
             testID="hunt-start-button"
-            onPress={() => huntMut.mutate()}
+            onPress={startHunt}
             style={styles.startBtn}
             disabled={huntMut.isPending}
           >
@@ -177,6 +198,7 @@ export default function HuntingScreen() {
               <View key={`${p.ip}:${p.port}:${idx}`} testID={`proxy-item-${idx}`} style={styles.proxyRow}>
                 <Pressable style={styles.flex1} onPress={() => copyOne(p)}>
                   <Text style={styles.proxyIp}>{p.ip}</Text>
+                  <Text style={styles.similarity}>{t("similarity")}: OCTET {p.octet_match ?? 0}/4</Text>
                   <Text style={styles.proxyMeta} numberOfLines={1}>{[p.city, p.country].filter(Boolean).join(", ")} · {p.isp}</Text>
                   <View style={styles.proxyBadges}>
                     <View style={[styles.typeBadge, { borderColor: p.owned ? colors.borderStrong : colors.border, backgroundColor: p.owned ? colors.brandTertiary : "transparent" }]}>
@@ -214,34 +236,6 @@ export default function HuntingScreen() {
                 </Pressable>
               );
             })}
-          </View>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={countryOpen} transparent animationType="fade" onRequestClose={() => setCountryOpen(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setCountryOpen(false)}>
-          <View style={styles.pickerCard}>
-            <ScrollView style={styles.countryScroll} showsVerticalScrollIndicator={false}>
-              <Pressable testID="country-option-auto" onPress={() => { setCountry(""); setCountryOpen(false); }} style={styles.pickerRow}>
-                <Icon name={!country ? "check-circle" : "circle-outline"} size={22} color={!country ? colors.brandPrimary : colors.muted} />
-                <View style={styles.flex1}>
-                  <Text style={[styles.pickerLabel, { color: !country ? colors.onSurface : colors.onSurfaceSecondary }]}>{t("country_auto")}</Text>
-                  <Text style={styles.pickerDesc}>AUTO</Text>
-                </View>
-              </Pressable>
-              {countries.map((c) => {
-                const selected = c.code.toLowerCase() === country.toLowerCase();
-                return (
-                  <Pressable key={c.code} testID={`country-option-${c.code}`} onPress={() => { setCountry(c.code.toLowerCase()); setCountryOpen(false); }} style={styles.pickerRow}>
-                    <Icon name={selected ? "check-circle" : "circle-outline"} size={22} color={selected ? colors.brandPrimary : colors.muted} />
-                    <View style={styles.flex1}>
-                      <Text style={[styles.pickerLabel, { color: selected ? colors.onSurface : colors.onSurfaceSecondary }]}>{c.name}</Text>
-                      <Text style={styles.pickerDesc}>{c.code}</Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
           </View>
         </Pressable>
       </Modal>
@@ -326,6 +320,7 @@ const useStyles = makeStyles((colors) => ({
   smallBtnText: { color: colors.onBrandTertiary, fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
   proxyRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider, paddingVertical: spacing.md },
   proxyIp: { color: colors.onSurface, fontSize: font.base, fontFamily: mono, fontWeight: "700" },
+  similarity: { color: colors.brandPrimary, fontSize: 11, fontWeight: "800", letterSpacing: 0.5, marginTop: 4, fontFamily: mono },
   proxyPort: { color: colors.brandPrimary },
   proxyMeta: { color: colors.onSurfaceTertiary, fontSize: font.sm, marginTop: 2 },
   proxyBadges: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },

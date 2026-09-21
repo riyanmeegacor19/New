@@ -36,6 +36,13 @@ User (Bahasa Indonesia) meminta aplikasi proxy bergaya "HN Proxy V1", lalu membe
 ## Next Tasks
 - Iterasi 6: Sambung Gateway (done), Impor Server, Salin Kredensial.
 
+## Iterasi 7 (2026-09-21) — Hunting fokus IP Target
+- Frontend hunting.tsx: dropdown NEGARA diganti input ALAMAT IP TARGET (IPV4/IPV6) sesuai gaya HNPROXY.
+  Kirim {target_ip, mode} ke POST /api/hunt (backend sudah geo-lookup target -> resolve gateway).
+  Setiap hasil menampilkan "KEMIRIPAN: OCTET x/4" (field octet_match), kota/negara/ISP/ASN, tombol HUBUNGKAN.
+  Validasi IPv4/IPv6 di client + toast. Modal & state negara dihapus. Verified via screenshot (12 proxy Jeddah, SA).
+
+
 ## Reseller Platform (2026-09-20) — FASE 1
 - Pivot: RIYANMEE PROXY jadi platform RESELLER proxy global (Bright Data upstream, Fase 2).
 - Admin = akun `idmee` (role admin, seeded idempoten). Customer = user register biasa.

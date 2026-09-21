@@ -69,6 +69,7 @@ export type ProxyResultT = {
   latency_ms: number;
   type: string;
   match?: string;
+  octet_match?: number;
   owned?: boolean;
   label?: string;
   session?: string;
