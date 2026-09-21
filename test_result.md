@@ -186,6 +186,41 @@ backend:
         -agent: "testing"
         -comment: "PASSED. Settings management fully functional: (1) GET /api/admin/settings returns payment_info (BCA/1462261696/I KADEK RISPO SUGIANTARA), proxy_host=155.138.227.248, proxy_port=1080, countries list, upstream config. (2) PUT /api/admin/settings successfully updates payment_info to Mandiri, persists changes verified by GET. Restored to BCA successfully. (3) GET /api/payment-info (customer token) returns payment_info. (4) GET /api/countries (customer token) returns countries list including ID/US. All settings endpoints verified working."
 
+  - task: "Hunting oct-3 (/24) match + unique results + configurable count"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: >
+          User requirement (Bahasa Indonesia): hunting is the MOST important feature. When a customer
+          enters an IP, hunting must return proxies with the SAME first 3 octets (same /24 subnet).
+          Enhanced: added same_subnet_ips() guaranteeing UNIQUE IPs all sharing the target's first 3
+          octets; hunt_pool default count raised 12 -> 24; HuntIn accepts optional count (clamped 1..100
+          in /hunt). Accessible to BOTH admin and customer (any authenticated user). TEST: POST /api/hunt
+          {target_ip, mode, count?} as (a) admin idmee and (b) a customer. Verify all result IPs share
+          target first-3-octets, all unique, count respected (default 24, custom e.g. 40), history entry
+          created. Verified via curl (24/24 & 40/40 oct3, all unique); confirm for customer token too.
+        -working: true
+        -agent: "testing"
+        -comment: >
+          PASSED. All 8 test scenarios verified successfully: (1) Admin login with idmee/riyanmee123 
+          successful. (2) Customer registration (hunttest1) successful. (3) Admin hunt with target_ip 
+          109.228.222.82, mode=full, default count -> HTTP 200, count=24, ALL 24 IPs share oct-3 prefix 
+          109.228.222, ALL unique (no duplicates). (4) Admin hunt with target_ip 8.8.8.8, mode=ultimate, 
+          count=40 -> HTTP 200, count=40, ALL 40 IPs share oct-3 prefix 8.8.8, ALL unique. (5) Count 
+          clamping verified: count=500 clamped to 100 (<=100), count=0 returned 24 results (>=1), 
+          count=-10 returned 1 result (>=1). (6) Customer hunt with target_ip 1.2.3.4, mode=city -> 
+          HTTP 200, ALL 24 IPs share oct-3 prefix 1.2.3, ALL unique - confirms hunting accessible to 
+          customers. (7) Invalid IP "not-an-ip" -> HTTP 400 with proper error message. (8) History 
+          entry created after hunt (kind=hunt, title present). Hunting endpoint working perfectly with 
+          correct oct-3 matching, uniqueness guarantee, count clamping, and accessibility to both admin 
+          and customer roles.
+
   - task: "Existing endpoints regression (auth/gateway/hunt/ip-info/proxies/history)"
     implemented: true
     working: true
@@ -297,3 +332,15 @@ agent_communication:
       correctly and persists to database, (7) Quota exceeded scenario returns active=false 
       reason=quota_exceeded when bandwidth_used_mb >= bandwidth_limit_mb. Gateway authentication 
       (PROXY_GATEWAY_TOKEN) working correctly. No issues found. Ready for production use.
+    -agent: "testing"
+    -message: >
+      HUNTING ENDPOINT TESTING COMPLETE - ALL TESTS PASSED (8/8). POST /api/hunt endpoint verified 
+      working perfectly with all requested scenarios: (1) Admin hunt with default count=24 returns 
+      exactly 24 results, ALL sharing first 3 octets (109.228.222.x), ALL unique. (2) Admin hunt with 
+      custom count=40 returns exactly 40 results, ALL sharing first 3 octets (8.8.8.x), ALL unique. 
+      (3) Count clamping working correctly: count=500 clamped to 100, count=0 returns >=1, count=-10 
+      returns >=1. (4) Customer access verified: registered customer can successfully hunt, results 
+      share oct-3 prefix and are unique. (5) Invalid IP validation working: "not-an-ip" returns HTTP 400. 
+      (6) History entry created after each hunt with kind=hunt. Oct-3 matching (same /24 subnet) and 
+      uniqueness guarantee working as designed. Hunting accessible to both admin and customer roles. 
+      No issues found.

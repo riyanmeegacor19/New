@@ -146,6 +146,7 @@ class IpInfoIn(BaseModel):
 class HuntIn(BaseModel):
     target_ip: str
     mode: str = "ultimate"
+    count: int = 24  # how many proxies to return (same /24 as target)
 
 
 class ProxyServerDoc(BaseDocument):
@@ -478,12 +479,39 @@ def gen_ip(seed_ip: str, salt: int) -> str:
     return ".".join(str(max(1, o)) for o in octets)
 
 
-def hunt_pool(geo: dict, mode: str, count: int = 12) -> List[dict]:
-    """Generate a realistic proxy list matching the target's geo per mode."""
+def same_subnet_ips(base_ip: str, count: int) -> List[str]:
+    """Return `count` UNIQUE IPs that share the first 3 octets (same /24) as
+    `base_ip`. Deterministic per target so repeated hunts on the same IP are
+    stable, but every IP in a single result set is guaranteed unique."""
+    parts = base_ip.split(".")
+    if len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts):
+        a, b, c, d = (int(x) for x in parts)
+        candidates = [x for x in range(1, 255) if x != d]  # 1..254, skip target's own
+        seed = int(hashlib.sha256(base_ip.encode()).hexdigest(), 16)
+        random.Random(seed).shuffle(candidates)
+        return [f"{a}.{b}.{c}.{x}" for x in candidates[:count]]
+    # IPv6 / invalid fallback: dedupe generated IPs
+    out: List[str] = []
+    seen = set()
+    i = 0
+    while len(out) < count and i < count * 8:
+        ip = gen_ip(base_ip, i)
+        i += 1
+        if ip not in seen:
+            seen.add(ip)
+            out.append(ip)
+    return out
+
+
+def hunt_pool(geo: dict, mode: str, count: int = 24) -> List[dict]:
+    """Generate a realistic proxy list matching the target's geo per mode.
+
+    Every proxy shares the target's first 3 octets (same /24 subnet) and all
+    IPs within a result set are unique."""
     results = []
     base = geo.get("ip", "0.0.0.0")
-    for i in range(count):
-        ip = gen_ip(base, i)
+    ips = same_subnet_ips(base, count)
+    for i, ip in enumerate(ips):
         port = 10000 + (int(hashlib.md5(f"{ip}{i}".encode()).hexdigest(), 16) % 55000)
         item = {
             "ip": ip,
@@ -681,7 +709,8 @@ async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
     if not valid_ip(ip):
         raise HTTPException(status_code=400, detail="Masukkan alamat IP target yang valid")
     geo = await geo_lookup(ip)
-    results = hunt_pool(geo, mode)
+    count = max(1, min(int(body.count or 24), 100))
+    results = hunt_pool(geo, mode, count)
     owned = await db.proxies.find({"user_id": str(user.id), "deleted_at": None}).to_list(100)
     owned_results = [
         {
