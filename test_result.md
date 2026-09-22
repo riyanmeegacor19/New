@@ -121,7 +121,13 @@ backend:
     status_history:
         -working: true
         -agent: "main"
-        -comment: "FASE 1 NodeMaven. Config via backend/.env. nodemaven_username() builds dynamic username country/region/city + unique sid per result + filter. /api/hunt emits gateway_host=gate.nodemaven.com, http_port=8080, socks_port=1080 when configured; falls back to VPS otherwise. Verified: real connection through gate.nodemaven.com (socks5:1080 & http:8080) returned live US residential exit IP 47.141.220.162. End-to-end working."
+        -comment: "FASE 1 NodeMaven (generated /24 preview). Superseded by OPSI 2 below."
+        -working: "NA"
+        -agent: "main"
+        -comment: "OPSI 2 - REAL IP mode. /api/hunt sekarang MEMBUKA sesi NodeMaven sungguhan (parallel) via _nodemaven_resolve_pool: tiap sesi pakai sticky sid unik (username country/region/city dari geo target IP), lalu ambil REAL exit IP lewat IP-echo (api.ipify.org) melalui proxy NodeMaven HTTP 8080. Tiap real IP di-geo-lookup untuk info kota/ISP/ASN akurat, octet_match dihitung jujur vs target. count default 6 (clamp 1..10). Fallback: kalau city tak menghasilkan IP, ulang country-only. Kalau tetap kosong -> 502. Result carries real ip + sid + username + password + gateway_host=gate.nodemaven.com + http_port 8080 + socks_port 1080. CONNECT (HUBUNGKAN) memakai sid yang sama -> exit IP == IP yang tampil. Manually verified: hunt target 8.8.8.8 -> 3 real IPs (98.97.24.157 Starlink, 73.189.26.157 Comcast, 172.59.162.72 T-Mobile) semua San Jose/SF US; reproduksi sid 62025b69218e -> exit IP 98.97.24.157 (COCOK). NEEDS RETEST via testing agent."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED ALL TESTS (5/5). NodeMaven integration (OPSI 2 - REAL IP mode) working perfectly. Test results: (1) Login with idmee/riyanmee123 successful, got access_token. (2) POST /api/hunt with target_ip=8.8.8.8, mode=ultimate, count=3 returned 3 REAL NodeMaven residential IPs in 1.5s: 73.189.178.6, 67.180.119.15, 73.158.149.199 (all San Jose, US). (3) ALL required fields verified for each result: gateway_host=gate.nodemaven.com ✓, http_port=8080 ✓, socks_port=1080 ✓, protocol=socks5 ✓, upstream=nodemaven ✓, username format correct (riyanmeegacor19_gmail_com-country-us-region-california-city-san_jose-sid-<hex>-filter-medium) ✓, password=ig1zt57cx1 ✓, session populated ✓, country_code/city/isp populated ✓, latency_ms>0 ✓. (4) CRITICAL - STICKY REPRODUCIBILITY VERIFIED: Used first result's username/password to connect through NodeMaven proxy (curl -x http://username:password@gate.nodemaven.com:8080 https://api.ipify.org), exit IP returned 73.189.178.6 which EXACTLY MATCHES the displayed IP. This proves HUBUNGKAN gives the exact IP shown. (5) Validation working: invalid IP 'not-an-ip' rejected with 400, empty target_ip rejected with 400. (6) History entry created with kind=hunt. Real IPs returned (not same /24 as target, which is EXPECTED and correct for residential proxies - octet_match=0 is normal). All NodeMaven fields correct. Sticky reproducibility working perfectly. No issues found."
   - task: "Real proxy hunting via VPS gateway (IPRoyal residential upstream) - POST /api/hunt"
     implemented: true
     working: true
@@ -420,7 +426,7 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 4
+  test_sequence: 5
   run_ui: true
 
 test_plan:
@@ -563,3 +569,23 @@ agent_communication:
       NodeMaven integration (gate.nodemaven.com:8080/1080), dynamic username format, Success modal 
       display, copy buttons (HTTP & SOCKS5), modal close, mode dropdown. No issues found. The IP 
       Hunting flow with NodeMaven integration is FULLY WORKING and ready for production use.
+
+    -agent: "testing"
+    -message: >
+      NODEMAVEN BACKEND TESTING COMPLETE - ALL TESTS PASSED (5/5). Tested ONLY the POST /api/hunt 
+      endpoint with NodeMaven integration (OPSI 2 - REAL IP mode) as requested. Used SMALL counts (3) 
+      to conserve NodeMaven 2GB quota. Test results: (1) Login with idmee/riyanmee123 successful, 
+      got access_token. (2) POST /api/hunt with target_ip=8.8.8.8, mode=ultimate, count=3 returned 
+      3 REAL NodeMaven residential IPs in 1.5s: 73.189.178.6 (San Jose, US), 67.180.119.15 (San Jose, US), 
+      73.158.149.199 (San Jose, US). (3) ALL required fields verified for each result: gateway_host=
+      gate.nodemaven.com ✓, http_port=8080 ✓, socks_port=1080 ✓, protocol=socks5 ✓, upstream=nodemaven ✓, 
+      username format correct (riyanmeegacor19_gmail_com-country-us-region-california-city-san_jose-sid-
+      <hex>-filter-medium) ✓, password=ig1zt57cx1 ✓, session populated ✓, country_code/city/isp 
+      populated ✓, latency_ms>0 ✓. (4) CRITICAL - STICKY REPRODUCIBILITY VERIFIED: Used first result's 
+      username/password to connect through NodeMaven proxy via curl, exit IP returned 73.189.178.6 which 
+      EXACTLY MATCHES the displayed IP. This proves HUBUNGKAN gives the exact IP shown. (5) Validation 
+      working: invalid IP 'not-an-ip' rejected with 400, empty target_ip rejected with 400. (6) History 
+      entry created with kind=hunt. Real IPs returned (not same /24 as target, which is EXPECTED and 
+      correct for residential proxies - octet_match=0 is normal). All NodeMaven fields correct. Sticky 
+      reproducibility working perfectly. NodeMaven integration (OPSI 2 - REAL IP mode) is WORKING 
+      CORRECTLY and ready for production use. No issues found.

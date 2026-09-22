@@ -1,448 +1,374 @@
 #!/usr/bin/env python3
 """
-Backend test for Fase 2 Proxy Gateway Endpoints
-Tests /api/proxy/authorize and /api/proxy/usage
+Backend test for POST /api/hunt endpoint with NodeMaven integration (OPSI 2 - REAL IP mode).
+Tests ONLY the hunt endpoint as requested, keeping counts small to conserve NodeMaven 2GB quota.
 """
-import requests
-import json
-import sys
 
-# Configuration
-BASE_URL = "https://github-branch-main.preview.emergentagent.com/api"
+import json
+import subprocess
+import sys
+import time
+import requests
+
+# Backend URL - using localhost:8001 as specified in review request
+BACKEND_URL = "http://localhost:8001"
+API_BASE = f"{BACKEND_URL}/api"
+
+# Test credentials from test_credentials.md
 ADMIN_USERNAME = "idmee"
 ADMIN_PASSWORD = "riyanmee123"
-PROXY_GATEWAY_TOKEN = "MhWCrBdJf-KjjEwIY3L0Z6dDT6WCECZSe1pW66Die7M"
 
-# Test customer credentials
-TEST_CUSTOMER_USERNAME = "gwtest1"
-TEST_CUSTOMER_PASSWORD = "secret123"
-TEST_CUSTOMER_COUNTRY = "us"
-TEST_PACKAGE_ID = "day7"
+# NodeMaven expected values
+EXPECTED_GATEWAY_HOST = "gate.nodemaven.com"
+EXPECTED_HTTP_PORT = 8080
+EXPECTED_SOCKS_PORT = 1080
+EXPECTED_PROTOCOL = "socks5"
+EXPECTED_UPSTREAM = "nodemaven"
+EXPECTED_PASSWORD = "ig1zt57cx1"
 
-# Global variables
-admin_token = None
-test_customer_id = None
-test_customer_proxy_password = None
+def log(msg):
+    """Print timestamped log message."""
+    print(f"[{time.strftime('%H:%M:%S')}] {msg}")
 
-def log(message):
-    """Print log message"""
-    print(f"[TEST] {message}")
+def test_login():
+    """Test 1: Login as idmee to get access_token."""
+    log("TEST 1: Login as admin (idmee)")
+    
+    response = requests.post(
+        f"{API_BASE}/auth/login",
+        json={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD},
+        timeout=30
+    )
+    
+    assert response.status_code == 200, f"Login failed with status {response.status_code}: {response.text}"
+    
+    data = response.json()
+    assert "access_token" in data, "No access_token in login response"
+    assert data.get("token_type") == "bearer", "Token type is not bearer"
+    
+    token = data["access_token"]
+    log(f"✓ Login successful, got access_token (length: {len(token)})")
+    
+    return token
 
-def log_response(response, label="Response"):
-    """Log response details"""
-    log(f"{label}: Status={response.status_code}")
+def test_hunt_basic(token):
+    """Test 2: POST /api/hunt with target_ip=8.8.8.8, mode=ultimate, count=3."""
+    log("TEST 2: POST /api/hunt with target_ip=8.8.8.8, mode=ultimate, count=3")
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = {
+        "target_ip": "8.8.8.8",
+        "mode": "ultimate",
+        "count": 3
+    }
+    
+    log("  Sending hunt request (may take up to 120s for real NodeMaven calls)...")
+    start_time = time.time()
+    
+    response = requests.post(
+        f"{API_BASE}/hunt",
+        json=payload,
+        headers=headers,
+        timeout=120
+    )
+    
+    elapsed = time.time() - start_time
+    log(f"  Response received in {elapsed:.1f}s")
+    
+    assert response.status_code == 200, f"Hunt failed with status {response.status_code}: {response.text}"
+    
+    data = response.json()
+    
+    # Verify response structure
+    assert "target" in data, "No 'target' in response"
+    assert "count" in data, "No 'count' in response"
+    assert "results" in data, "No 'results' in response"
+    
+    target = data["target"]
+    count = data["count"]
+    results = data["results"]
+    
+    log(f"  Target: {target.get('city', 'N/A')}, {target.get('country_code', 'N/A')}")
+    log(f"  Count: {count} (requested 3, got {count})")
+    
+    # Verify we got at least 1 result (up to 3)
+    assert count >= 1, f"Expected count >= 1, got {count}"
+    assert len(results) >= 1, f"Expected at least 1 result, got {len(results)}"
+    
+    log(f"✓ Hunt successful, got {len(results)} results")
+    
+    # Verify each result has all required fields
+    log("  Verifying result fields...")
+    for i, result in enumerate(results):
+        log(f"  Result {i+1}: {result.get('ip', 'N/A')}")
+        
+        # Required fields
+        assert "ip" in result, f"Result {i+1} missing 'ip'"
+        assert "gateway_host" in result, f"Result {i+1} missing 'gateway_host'"
+        assert "http_port" in result, f"Result {i+1} missing 'http_port'"
+        assert "socks_port" in result, f"Result {i+1} missing 'socks_port'"
+        assert "protocol" in result, f"Result {i+1} missing 'protocol'"
+        assert "upstream" in result, f"Result {i+1} missing 'upstream'"
+        assert "username" in result, f"Result {i+1} missing 'username'"
+        assert "password" in result, f"Result {i+1} missing 'password'"
+        assert "session" in result, f"Result {i+1} missing 'session'"
+        assert "country_code" in result, f"Result {i+1} missing 'country_code'"
+        assert "city" in result, f"Result {i+1} missing 'city'"
+        assert "isp" in result, f"Result {i+1} missing 'isp'"
+        assert "latency_ms" in result, f"Result {i+1} missing 'latency_ms'"
+        
+        # Verify field values
+        ip = result["ip"]
+        assert ip and len(ip.split(".")) == 4, f"Result {i+1} has invalid IP: {ip}"
+        
+        assert result["gateway_host"] == EXPECTED_GATEWAY_HOST, \
+            f"Result {i+1} gateway_host={result['gateway_host']}, expected {EXPECTED_GATEWAY_HOST}"
+        
+        assert result["http_port"] == EXPECTED_HTTP_PORT, \
+            f"Result {i+1} http_port={result['http_port']}, expected {EXPECTED_HTTP_PORT}"
+        
+        assert result["socks_port"] == EXPECTED_SOCKS_PORT, \
+            f"Result {i+1} socks_port={result['socks_port']}, expected {EXPECTED_SOCKS_PORT}"
+        
+        assert result["protocol"] == EXPECTED_PROTOCOL, \
+            f"Result {i+1} protocol={result['protocol']}, expected {EXPECTED_PROTOCOL}"
+        
+        assert result["upstream"] == EXPECTED_UPSTREAM, \
+            f"Result {i+1} upstream={result['upstream']}, expected {EXPECTED_UPSTREAM}"
+        
+        username = result["username"]
+        assert username and len(username) > 0, f"Result {i+1} has empty username"
+        assert username.startswith("riyanmeegacor19_gmail_com-country-"), \
+            f"Result {i+1} username doesn't start with expected prefix: {username}"
+        assert "-sid-" in username, f"Result {i+1} username missing '-sid-': {username}"
+        
+        password = result["password"]
+        assert password == EXPECTED_PASSWORD, \
+            f"Result {i+1} password={password}, expected {EXPECTED_PASSWORD}"
+        
+        session = result["session"]
+        assert session and len(session) > 0, f"Result {i+1} has empty session"
+        
+        country_code = result["country_code"]
+        assert country_code and len(country_code) > 0, f"Result {i+1} has empty country_code"
+        
+        city = result["city"]
+        assert city and len(city) > 0, f"Result {i+1} has empty city"
+        
+        isp = result["isp"]
+        assert isp and len(isp) > 0, f"Result {i+1} has empty isp"
+        
+        latency_ms = result["latency_ms"]
+        assert isinstance(latency_ms, (int, float)) and latency_ms > 0, \
+            f"Result {i+1} latency_ms={latency_ms} is not a positive number"
+        
+        # Note: octet_match will usually be 0 for residential IPs (NOT same /24 as target)
+        # This is EXPECTED and correct for NodeMaven residential proxies
+        octet_match = result.get("octet_match", 0)
+        log(f"    IP: {ip}, Country: {country_code}, City: {city}")
+        log(f"    Username: {username}")
+        log(f"    Session: {session}, Latency: {latency_ms}ms, Octet match: {octet_match}")
+    
+    log("✓ All result fields verified")
+    
+    return results
+
+def test_sticky_reproducibility(results):
+    """Test 3: Verify sticky reproducibility - use first result's creds to connect through NodeMaven."""
+    log("TEST 3: CRITICAL - Verify sticky reproducibility")
+    
+    if not results:
+        log("  ⚠ No results to test, skipping")
+        return
+    
+    first_result = results[0]
+    username = first_result["username"]
+    password = first_result["password"]
+    expected_ip = first_result["ip"]
+    gateway_host = first_result["gateway_host"]
+    http_port = first_result["http_port"]
+    
+    log(f"  Testing first result: IP={expected_ip}")
+    log(f"  Username: {username}")
+    log(f"  Making request through NodeMaven proxy to verify exit IP...")
+    
+    # Use curl to make a request through the NodeMaven proxy
+    proxy_url = f"http://{username}:{password}@{gateway_host}:{http_port}"
+    
     try:
-        body = response.json()
-        log(f"{label} Body: {json.dumps(body, indent=2)}")
-    except:
-        log(f"{label} Body: {response.text[:200]}")
+        # Use subprocess to run curl with the proxy
+        cmd = [
+            "curl", "-s", "--max-time", "40",
+            "-x", proxy_url,
+            "https://api.ipify.org?format=json"
+        ]
+        
+        log(f"  Running: curl -s --max-time 40 -x 'http://{username}:***@{gateway_host}:{http_port}' https://api.ipify.org?format=json")
+        
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=45
+        )
+        
+        if result.returncode != 0:
+            log(f"  ✗ curl failed with return code {result.returncode}")
+            log(f"  stderr: {result.stderr}")
+            raise AssertionError(f"curl failed: {result.stderr}")
+        
+        output = result.stdout.strip()
+        log(f"  curl output: {output}")
+        
+        # Parse JSON response
+        try:
+            ip_data = json.loads(output)
+            actual_ip = ip_data.get("ip", "")
+        except json.JSONDecodeError as e:
+            log(f"  ✗ Failed to parse JSON: {e}")
+            raise AssertionError(f"Failed to parse curl output as JSON: {output}")
+        
+        log(f"  Expected IP: {expected_ip}")
+        log(f"  Actual IP:   {actual_ip}")
+        
+        if actual_ip == expected_ip:
+            log(f"✓ STICKY REPRODUCIBILITY VERIFIED: Exit IP matches exactly!")
+        else:
+            log(f"✗ STICKY REPRODUCIBILITY FAILED: Exit IP does not match!")
+            raise AssertionError(
+                f"Sticky reproducibility failed: expected IP {expected_ip}, got {actual_ip}"
+            )
+    
+    except subprocess.TimeoutExpired:
+        log("  ✗ curl timed out after 45 seconds")
+        raise AssertionError("curl timed out")
+    except Exception as e:
+        log(f"  ✗ Error during sticky reproducibility test: {e}")
+        raise
 
-def test_admin_login():
-    """Test 1: Admin login"""
-    global admin_token
-    log("\n=== Test 1: Admin Login ===")
+def test_validation(token):
+    """Test 4: Validation - invalid IP and empty target_ip should return 400."""
+    log("TEST 4: Validation tests")
     
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # Test 4a: Invalid IP
+    log("  4a: Testing invalid IP 'not-an-ip'")
     response = requests.post(
-        f"{BASE_URL}/auth/login",
-        json={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD}
-    )
-    log_response(response, "Admin Login")
-    
-    if response.status_code != 200:
-        log("❌ FAILED: Admin login failed")
-        return False
-    
-    data = response.json()
-    # Check for both "token" and "access_token" fields
-    if "access_token" in data:
-        admin_token = data["access_token"]
-    elif "token" in data:
-        admin_token = data["token"]
-    else:
-        log("❌ FAILED: No token or access_token in response")
-        return False
-    
-    log(f"✅ PASSED: Admin login successful, token obtained")
-    return True
-
-def test_create_customer():
-    """Test 2: Create test customer with package"""
-    global test_customer_id, test_customer_proxy_password
-    log("\n=== Test 2: Create Test Customer ===")
-    
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    response = requests.post(
-        f"{BASE_URL}/admin/customers",
+        f"{API_BASE}/hunt",
+        json={"target_ip": "not-an-ip", "mode": "ultimate", "count": 2},
         headers=headers,
-        json={
-            "username": TEST_CUSTOMER_USERNAME,
-            "password": TEST_CUSTOMER_PASSWORD,
-            "country": TEST_CUSTOMER_COUNTRY,
-            "package_id": TEST_PACKAGE_ID
-        }
+        timeout=30
     )
-    log_response(response, "Create Customer")
     
-    if response.status_code not in [200, 201]:
-        log("❌ FAILED: Customer creation failed")
-        return False
+    assert response.status_code == 400, \
+        f"Expected 400 for invalid IP, got {response.status_code}: {response.text}"
+    log("  ✓ Invalid IP correctly rejected with 400")
     
-    data = response.json()
-    test_customer_id = data.get("id")
+    # Test 4b: Empty target_ip
+    log("  4b: Testing empty target_ip")
+    response = requests.post(
+        f"{API_BASE}/hunt",
+        json={"mode": "ultimate", "count": 2},
+        headers=headers,
+        timeout=30
+    )
     
-    if not test_customer_id:
-        log("❌ FAILED: No customer ID in response")
-        return False
+    assert response.status_code == 400, \
+        f"Expected 400 for empty target_ip, got {response.status_code}: {response.text}"
+    log("  ✓ Empty target_ip correctly rejected with 400")
     
-    log(f"✅ PASSED: Customer created with ID: {test_customer_id}")
-    return True
+    log("✓ All validation tests passed")
 
-def test_get_customer_proxy_password():
-    """Test 3: Get customer details to retrieve proxy_password"""
-    global test_customer_proxy_password
-    log("\n=== Test 3: Get Customer Proxy Password ===")
+def test_history(token):
+    """Test 5: Verify history entry with kind=hunt is created."""
+    log("TEST 5: Verify history entry created")
     
-    headers = {"Authorization": f"Bearer {admin_token}"}
+    headers = {"Authorization": f"Bearer {token}"}
+    
     response = requests.get(
-        f"{BASE_URL}/admin/customers",
-        headers=headers
-    )
-    log_response(response, "Get Customers")
-    
-    if response.status_code != 200:
-        log("❌ FAILED: Failed to get customers list")
-        return False
-    
-    customers = response.json()
-    test_customer = None
-    for customer in customers:
-        if customer.get("username") == TEST_CUSTOMER_USERNAME:
-            test_customer = customer
-            break
-    
-    if not test_customer:
-        log("❌ FAILED: Test customer not found in list")
-        return False
-    
-    test_customer_proxy_password = test_customer.get("proxy_password")
-    
-    if not test_customer_proxy_password:
-        log("❌ FAILED: No proxy_password set for customer")
-        return False
-    
-    log(f"✅ PASSED: Retrieved proxy_password: {test_customer_proxy_password}")
-    log(f"Customer details: country={test_customer.get('country')}, bandwidth_limit_mb={test_customer.get('bandwidth_limit_mb')}")
-    return True
-
-def test_authorize_correct_credentials():
-    """Test 4: Authorize with correct credentials"""
-    log("\n=== Test 4: Authorize with Correct Credentials ===")
-    
-    headers = {"Authorization": f"Bearer {PROXY_GATEWAY_TOKEN}"}
-    response = requests.post(
-        f"{BASE_URL}/proxy/authorize",
+        f"{API_BASE}/history",
         headers=headers,
-        json={
-            "username": TEST_CUSTOMER_USERNAME,
-            "password": test_customer_proxy_password
-        }
-    )
-    log_response(response, "Authorize (Correct)")
-    
-    if response.status_code != 200:
-        log(f"❌ FAILED: Expected status 200, got {response.status_code}")
-        return False
-    
-    data = response.json()
-    
-    if data.get("active") != True:
-        log(f"❌ FAILED: Expected active=true, got active={data.get('active')}, reason={data.get('reason')}")
-        return False
-    
-    if data.get("reason") != "ok":
-        log(f"❌ FAILED: Expected reason='ok', got reason={data.get('reason')}")
-        return False
-    
-    if data.get("customer_id") != TEST_CUSTOMER_USERNAME:
-        log(f"❌ FAILED: Expected customer_id={TEST_CUSTOMER_USERNAME}, got {data.get('customer_id')}")
-        return False
-    
-    if data.get("country") != TEST_CUSTOMER_COUNTRY:
-        log(f"❌ FAILED: Expected country={TEST_CUSTOMER_COUNTRY}, got {data.get('country')}")
-        return False
-    
-    log(f"✅ PASSED: Authorize successful - active=true, country={data.get('country')}, customer_id={data.get('customer_id')}")
-    return True
-
-def test_authorize_wrong_password():
-    """Test 5: Authorize with wrong password"""
-    log("\n=== Test 5: Authorize with Wrong Password ===")
-    
-    headers = {"Authorization": f"Bearer {PROXY_GATEWAY_TOKEN}"}
-    response = requests.post(
-        f"{BASE_URL}/proxy/authorize",
-        headers=headers,
-        json={
-            "username": TEST_CUSTOMER_USERNAME,
-            "password": "wrongpassword123"
-        }
-    )
-    log_response(response, "Authorize (Wrong Password)")
-    
-    if response.status_code != 200:
-        log(f"❌ FAILED: Expected status 200, got {response.status_code}")
-        return False
-    
-    data = response.json()
-    
-    if data.get("active") != False:
-        log(f"❌ FAILED: Expected active=false, got active={data.get('active')}")
-        return False
-    
-    if data.get("reason") != "bad_credentials":
-        log(f"❌ FAILED: Expected reason='bad_credentials', got reason={data.get('reason')}")
-        return False
-    
-    log(f"✅ PASSED: Authorize correctly rejected - active=false, reason=bad_credentials")
-    return True
-
-def test_authorize_no_token():
-    """Test 6: Authorize without Authorization header"""
-    log("\n=== Test 6: Authorize without Authorization Header ===")
-    
-    response = requests.post(
-        f"{BASE_URL}/proxy/authorize",
-        json={
-            "username": TEST_CUSTOMER_USERNAME,
-            "password": test_customer_proxy_password
-        }
-    )
-    log_response(response, "Authorize (No Token)")
-    
-    if response.status_code != 401:
-        log(f"❌ FAILED: Expected status 401, got {response.status_code}")
-        return False
-    
-    log(f"✅ PASSED: Authorize correctly rejected with 401 (no token)")
-    return True
-
-def test_authorize_wrong_token():
-    """Test 7: Authorize with wrong Bearer token"""
-    log("\n=== Test 7: Authorize with Wrong Bearer Token ===")
-    
-    headers = {"Authorization": f"Bearer wrongtoken123"}
-    response = requests.post(
-        f"{BASE_URL}/proxy/authorize",
-        headers=headers,
-        json={
-            "username": TEST_CUSTOMER_USERNAME,
-            "password": test_customer_proxy_password
-        }
-    )
-    log_response(response, "Authorize (Wrong Token)")
-    
-    if response.status_code != 401:
-        log(f"❌ FAILED: Expected status 401, got {response.status_code}")
-        return False
-    
-    log(f"✅ PASSED: Authorize correctly rejected with 401 (wrong token)")
-    return True
-
-def test_usage_report():
-    """Test 8: Report usage and verify bandwidth tracking"""
-    log("\n=== Test 8: Report Usage ===")
-    
-    # Report 50MB up + 50MB down = 100MB total
-    bytes_up = 52428800  # 50MB
-    bytes_down = 52428800  # 50MB
-    
-    headers = {"Authorization": f"Bearer {PROXY_GATEWAY_TOKEN}"}
-    response = requests.post(
-        f"{BASE_URL}/proxy/usage",
-        headers=headers,
-        json={
-            "username": TEST_CUSTOMER_USERNAME,
-            "bytes_up": bytes_up,
-            "bytes_down": bytes_down
-        }
-    )
-    log_response(response, "Usage Report")
-    
-    if response.status_code != 200:
-        log(f"❌ FAILED: Expected status 200, got {response.status_code}")
-        return False
-    
-    data = response.json()
-    
-    if data.get("ok") != True:
-        log(f"❌ FAILED: Expected ok=true, got ok={data.get('ok')}")
-        return False
-    
-    bandwidth_used_mb = data.get("bandwidth_used_mb")
-    if bandwidth_used_mb is None:
-        log(f"❌ FAILED: No bandwidth_used_mb in response")
-        return False
-    
-    # Should be approximately 100MB (allowing for rounding)
-    if bandwidth_used_mb < 95 or bandwidth_used_mb > 105:
-        log(f"⚠️  WARNING: Expected ~100MB, got {bandwidth_used_mb}MB")
-    
-    log(f"✅ PASSED: Usage reported successfully - bandwidth_used_mb={bandwidth_used_mb}")
-    
-    # Verify via admin API
-    log("\n=== Test 8b: Verify Usage via Admin API ===")
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    response = requests.get(
-        f"{BASE_URL}/admin/customers",
-        headers=headers
+        timeout=30
     )
     
-    if response.status_code != 200:
-        log("❌ FAILED: Failed to get customers list for verification")
-        return False
+    assert response.status_code == 200, \
+        f"Failed to get history with status {response.status_code}: {response.text}"
     
-    customers = response.json()
-    test_customer = None
-    for customer in customers:
-        if customer.get("username") == TEST_CUSTOMER_USERNAME:
-            test_customer = customer
-            break
+    history = response.json()
+    assert isinstance(history, list), "History is not a list"
     
-    if not test_customer:
-        log("❌ FAILED: Test customer not found for verification")
-        return False
+    # Find hunt entries
+    hunt_entries = [h for h in history if h.get("kind") == "hunt"]
     
-    verified_usage = test_customer.get("bandwidth_used_mb")
-    log(f"Verified bandwidth_used_mb from admin API: {verified_usage}MB")
+    assert len(hunt_entries) > 0, "No hunt entries found in history"
     
-    if verified_usage != bandwidth_used_mb:
-        log(f"⚠️  WARNING: Usage mismatch - usage API returned {bandwidth_used_mb}MB, admin API shows {verified_usage}MB")
-    else:
-        log(f"✅ PASSED: Usage verified via admin API - {verified_usage}MB")
+    log(f"  Found {len(hunt_entries)} hunt entries in history")
+    log(f"  Latest hunt: {hunt_entries[0].get('title', 'N/A')}")
     
-    return True
-
-def test_quota_exceeded():
-    """Test 9: Set quota to limit and verify authorize returns quota_exceeded"""
-    log("\n=== Test 9: Test Quota Exceeded ===")
-    
-    # First, set bandwidth_used_mb to the limit (day7 = 10GB = 10240MB)
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    response = requests.patch(
-        f"{BASE_URL}/admin/customers/{test_customer_id}",
-        headers=headers,
-        json={"bandwidth_used_mb": 10240}
-    )
-    log_response(response, "Set Quota to Limit")
-    
-    if response.status_code != 200:
-        log(f"❌ FAILED: Failed to update customer quota, status={response.status_code}")
-        return False
-    
-    log("Customer quota set to limit (10240MB)")
-    
-    # Now try to authorize
-    headers = {"Authorization": f"Bearer {PROXY_GATEWAY_TOKEN}"}
-    response = requests.post(
-        f"{BASE_URL}/proxy/authorize",
-        headers=headers,
-        json={
-            "username": TEST_CUSTOMER_USERNAME,
-            "password": test_customer_proxy_password
-        }
-    )
-    log_response(response, "Authorize (Over Quota)")
-    
-    if response.status_code != 200:
-        log(f"❌ FAILED: Expected status 200, got {response.status_code}")
-        return False
-    
-    data = response.json()
-    
-    if data.get("active") != False:
-        log(f"❌ FAILED: Expected active=false, got active={data.get('active')}")
-        return False
-    
-    if data.get("reason") != "quota_exceeded":
-        log(f"❌ FAILED: Expected reason='quota_exceeded', got reason={data.get('reason')}")
-        return False
-    
-    log(f"✅ PASSED: Authorize correctly rejected - active=false, reason=quota_exceeded")
-    return True
-
-def test_cleanup():
-    """Test 10: Cleanup - delete test customer"""
-    log("\n=== Test 10: Cleanup - Delete Test Customer ===")
-    
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    response = requests.delete(
-        f"{BASE_URL}/admin/customers/{test_customer_id}",
-        headers=headers
-    )
-    log_response(response, "Delete Customer")
-    
-    if response.status_code != 200:
-        log(f"⚠️  WARNING: Failed to delete customer, status={response.status_code}")
-        return False
-    
-    data = response.json()
-    if data.get("ok") != True:
-        log(f"⚠️  WARNING: Delete response ok={data.get('ok')}")
-        return False
-    
-    log(f"✅ PASSED: Test customer deleted successfully")
-    return True
+    log("✓ History entry verified")
 
 def main():
-    """Run all tests"""
+    """Run all tests."""
     log("=" * 80)
-    log("FASE 2 PROXY GATEWAY ENDPOINTS TEST")
+    log("BACKEND TEST: POST /api/hunt with NodeMaven integration (OPSI 2 - REAL IP)")
     log("=" * 80)
+    log("")
+    log("NOTE: Using SMALL counts (3) to conserve NodeMaven 2GB quota")
+    log("NOTE: Real upstream calls may take up to 120 seconds")
+    log("")
     
-    tests = [
-        ("Admin Login", test_admin_login),
-        ("Create Test Customer", test_create_customer),
-        ("Get Customer Proxy Password", test_get_customer_proxy_password),
-        ("Authorize with Correct Credentials", test_authorize_correct_credentials),
-        ("Authorize with Wrong Password", test_authorize_wrong_password),
-        ("Authorize without Token", test_authorize_no_token),
-        ("Authorize with Wrong Token", test_authorize_wrong_token),
-        ("Report Usage", test_usage_report),
-        ("Quota Exceeded", test_quota_exceeded),
-        ("Cleanup", test_cleanup),
-    ]
+    try:
+        # Test 1: Login
+        token = test_login()
+        log("")
+        
+        # Test 2: Hunt with NodeMaven
+        results = test_hunt_basic(token)
+        log("")
+        
+        # Test 3: CRITICAL - Sticky reproducibility
+        test_sticky_reproducibility(results)
+        log("")
+        
+        # Test 4: Validation
+        test_validation(token)
+        log("")
+        
+        # Test 5: History
+        test_history(token)
+        log("")
+        
+        log("=" * 80)
+        log("ALL TESTS PASSED ✓")
+        log("=" * 80)
+        log("")
+        log("Summary:")
+        log("  ✓ Login successful")
+        log("  ✓ Hunt returns real NodeMaven IPs with correct fields")
+        log("  ✓ STICKY REPRODUCIBILITY VERIFIED (exit IP matches)")
+        log("  ✓ Validation working (invalid/empty IP rejected)")
+        log("  ✓ History entry created")
+        log("")
+        log("NodeMaven integration (OPSI 2 - REAL IP mode) is WORKING CORRECTLY!")
+        
+        return 0
     
-    results = []
-    for name, test_func in tests:
-        try:
-            result = test_func()
-            results.append((name, result))
-        except Exception as e:
-            log(f"\n❌ EXCEPTION in {name}: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            results.append((name, False))
+    except AssertionError as e:
+        log("")
+        log("=" * 80)
+        log(f"TEST FAILED: {e}")
+        log("=" * 80)
+        return 1
     
-    # Summary
-    log("\n" + "=" * 80)
-    log("TEST SUMMARY")
-    log("=" * 80)
-    
-    passed = 0
-    failed = 0
-    for name, result in results:
-        status = "✅ PASSED" if result else "❌ FAILED"
-        log(f"{status}: {name}")
-        if result:
-            passed += 1
-        else:
-            failed += 1
-    
-    log("\n" + "=" * 80)
-    log(f"Total: {len(results)} tests | Passed: {passed} | Failed: {failed}")
-    log("=" * 80)
-    
-    return 0 if failed == 0 else 1
+    except Exception as e:
+        log("")
+        log("=" * 80)
+        log(f"ERROR: {e}")
+        log("=" * 80)
+        import traceback
+        traceback.print_exc()
+        return 1
 
 if __name__ == "__main__":
     sys.exit(main())

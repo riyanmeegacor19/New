@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import re
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -43,6 +44,7 @@ NODEMAVEN_SOCKS_PORT = int(os.environ.get("NODEMAVEN_SOCKS_PORT", "1080"))
 NODEMAVEN_USER = os.environ.get("NODEMAVEN_USER", "")
 NODEMAVEN_PASS = os.environ.get("NODEMAVEN_PASS", "")
 NODEMAVEN_FILTER = os.environ.get("NODEMAVEN_FILTER", "medium")
+IP_ECHO_URL = "https://api.ipify.org?format=json"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("riyanmee")
@@ -810,6 +812,38 @@ async def _gateway_resolve_pool(host: str, country: str, city: str, rounds: int,
     return pool
 
 
+async def _nodemaven_resolve_one(cc: str, region: str, city: str, idx: int) -> Optional[dict]:
+    """Open ONE NodeMaven sticky session (country/region/city) and discover the
+    REAL exit IP by calling an IP-echo through the proxy. Returns the real ip +
+    the exact username/sid so CONNECT reproduces the same exit IP."""
+    sid = hashlib.md5(f"{cc}:{city}:{idx}:{random.random()}".encode()).hexdigest()[:12]
+    uname = nodemaven_username(cc, region, city, sid)
+    proxy_url = f"http://{uname}:{NODEMAVEN_PASS}@{NODEMAVEN_HOST}:{NODEMAVEN_HTTP_PORT}"
+    t0 = time.monotonic()
+    try:
+        async with httpx.AsyncClient(proxy=proxy_url, timeout=30) as client:
+            r = await client.get(IP_ECHO_URL)
+        ip = (r.json() or {}).get("ip", "").strip()
+    except Exception:
+        return None
+    if not ip:
+        return None
+    return {"ip": ip, "sid": sid, "username": uname, "latency_ms": int((time.monotonic() - t0) * 1000)}
+
+
+async def _nodemaven_resolve_pool(cc: str, region: str, city: str, count: int) -> list:
+    """Open `count` NodeMaven sessions in parallel, return unique real exit IPs."""
+    tasks = [_nodemaven_resolve_one(cc, region, city, i) for i in range(count)]
+    res = await asyncio.gather(*tasks, return_exceptions=True)
+    seen: set = set()
+    pool: list = []
+    for r in res:
+        if isinstance(r, dict) and r.get("ip") and r["ip"] not in seen:
+            seen.add(r["ip"])
+            pool.append(r)
+    return pool
+
+
 @api_router.post("/hunt")
 async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
     """Hunt REAL residential proxies (IPRoyal) that MATCH a target IP's location.
@@ -883,53 +917,82 @@ async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
     nm_city = "" if mode == "isp" else tgt_city
 
     results = []
-    for i, ip in enumerate(same_subnet_ips(tip, count)):
-        sess = hashlib.md5(f"{ip}:{i}".encode()).hexdigest()[:12]
-        if nm_enabled:
-            uname = nodemaven_username(tgt_cc, tgt_region, nm_city, sess)
-            upw = NODEMAVEN_PASS
-            g_host = NODEMAVEN_HOST
-            http_port = NODEMAVEN_HTTP_PORT
-            socks_port = NODEMAVEN_SOCKS_PORT
-            g_port = socks_port
-            g_proto = "socks5"
-            upstream = "nodemaven"
-        else:
+    if nm_enabled:
+        # OPSI 2 — REAL IP mode. Open live NodeMaven sticky sessions, discover the
+        # REAL exit IP of each via an IP-echo, then display those ACTUAL pool IPs.
+        # CONNECT reuses the same sid so the customer lands on the exact IP shown.
+        nm_count = max(1, min(int(body.count or 6), 10))
+        pool = await _nodemaven_resolve_pool(tgt_cc.lower(), tgt_region, nm_city, nm_count)
+        if not pool and nm_city:
+            # Fallback: widen to whole country if the city yielded nothing.
+            pool = await _nodemaven_resolve_pool(tgt_cc.lower(), "", "", nm_count)
+        if not pool:
+            raise HTTPException(
+                status_code=502,
+                detail="NodeMaven belum mengembalikan IP untuk lokasi ini. Coba lagi atau ganti mode/negara.",
+            )
+        # Geo-locate each REAL exit IP (parallel) for accurate display info.
+        geos = await asyncio.gather(*[geo_lookup(p["ip"]) for p in pool], return_exceptions=True)
+        for i, p in enumerate(pool):
+            g = geos[i] if isinstance(geos[i], dict) else {}
+            r_cc = (g.get("country_code", "") or tgt_cc).upper()
+            r_country = g.get("country", "") or tgt_country
+            r_city = g.get("city", "") or tgt_city
+            r_isp = g.get("isp", "") or tgt_isp
+            r_asn = _asn_of(f"{g.get('asn','')} {r_isp}") or tgt_asn
+            results.append({
+                "ip": p["ip"],
+                "port": NODEMAVEN_SOCKS_PORT,
+                "country": r_country,
+                "country_code": r_cc,
+                "city": r_city,
+                "isp": (f"{r_asn} {r_isp}".strip() if r_asn else r_isp),
+                "asn": r_asn or r_isp,
+                "latency_ms": p.get("latency_ms", 0),
+                "type": "Residential",
+                "match": match_label,
+                "octet_match": _octet_match(p["ip"], tip),
+                "session": p["sid"],
+                "username": p["username"],
+                "password": NODEMAVEN_PASS,
+                "gateway_host": NODEMAVEN_HOST,
+                "gateway_port": NODEMAVEN_SOCKS_PORT,
+                "http_port": NODEMAVEN_HTTP_PORT,
+                "socks_port": NODEMAVEN_SOCKS_PORT,
+                "protocol": "socks5",
+                "upstream": "nodemaven",
+            })
+    else:
+        for i, ip in enumerate(same_subnet_ips(tip, count)):
+            sess = hashlib.md5(f"{ip}:{i}".encode()).hexdigest()[:12]
             uname = user.username
             if country:
                 uname += f"-country-{country}"
                 if city:
                     uname += f"-city-{city}"
             uname += f"-session-{sess}"
-            upw = proxy_pw
-            g_host = srv_host
-            http_port = srv_port
-            socks_port = srv_port
-            g_port = srv_port
-            g_proto = protocol
-            upstream = ""
-        results.append({
-            "ip": ip,
-            "port": g_port,
-            "country": tgt_country,
-            "country_code": tgt_cc,
-            "city": tgt_city,
-            "isp": isp_display,
-            "asn": tgt_asn or tgt_isp,
-            "latency_ms": 20 + (i * 13) % 180,
-            "type": "Residential",
-            "match": match_label,
-            "octet_match": _octet_match(ip, tip),
-            "session": sess,
-            "username": uname,
-            "password": upw,
-            "gateway_host": g_host,
-            "gateway_port": g_port,
-            "http_port": http_port,
-            "socks_port": socks_port,
-            "protocol": g_proto,
-            "upstream": upstream,
-        })
+            results.append({
+                "ip": ip,
+                "port": srv_port,
+                "country": tgt_country,
+                "country_code": tgt_cc,
+                "city": tgt_city,
+                "isp": isp_display,
+                "asn": tgt_asn or tgt_isp,
+                "latency_ms": 20 + (i * 13) % 180,
+                "type": "Residential",
+                "match": match_label,
+                "octet_match": _octet_match(ip, tip),
+                "session": sess,
+                "username": uname,
+                "password": proxy_pw,
+                "gateway_host": srv_host,
+                "gateway_port": srv_port,
+                "http_port": srv_port,
+                "socks_port": srv_port,
+                "protocol": protocol,
+                "upstream": "",
+            })
 
     # Closest first (highest octet match), then lowest latency.
     results.sort(
