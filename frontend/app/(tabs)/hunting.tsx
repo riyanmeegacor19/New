@@ -73,18 +73,20 @@ export default function HuntingScreen() {
   const srvHost = pa?.host || user?.server_host;
   const srvPort = pa?.port || user?.server_port;
 
-  // Hans-style: expose ONLY server:port. Auth is via IP whitelist, so the
-  // per-session username/password is intentionally hidden from the customer.
-  const proxyString = (p: ProxyResultT) => {
+  // Working proxy strings. When the result carries upstream creds (NodeMaven),
+  // we expose the full host:port:username:password for BOTH SOCKS5 and HTTP.
+  // Otherwise (VPS/whitelist mode) we expose only host:port.
+  const socksStr = (p: ProxyResultT) => {
     const host = p.gateway_host || srvHost;
-    const port = p.gateway_port || p.port || srvPort;
-    return `${host}:${port}`;
+    const port = p.socks_port || p.gateway_port || p.port || srvPort;
+    return p.username ? `${host}:${port}:${p.username}:${p.password}` : `${host}:${port}`;
   };
-
-  const copyCreds = async () => {
-    await Clipboard.setStringAsync(connected ? proxyString(connected) : `${srvHost}:${srvPort}`);
-    toast.show(t("creds_copied"), "success");
+  const httpStr = (p: ProxyResultT) => {
+    const host = p.gateway_host || srvHost;
+    const port = p.http_port || p.gateway_port || p.port || srvPort;
+    return p.username ? `${host}:${port}:${p.username}:${p.password}` : `${host}:${port}`;
   };
+  const proxyString = socksStr;
 
   const huntMut = useMutation({
     mutationFn: () => api<HuntResp>("/hunt", { method: "POST", json: { target_ip: targetIp.trim(), mode } }),
@@ -320,22 +322,63 @@ export default function HuntingScreen() {
                   <Text style={styles.sKey}>{t("asn_label")}:</Text>
                   <Text style={styles.sVal} numberOfLines={2}>{connected.isp || connected.asn}</Text>
                 </View>
+                <View style={styles.sDivider} />
                 <View style={styles.sRow}>
                   <Text style={styles.sKey}>{t("server_label")}:</Text>
                   <Text style={styles.sVal} numberOfLines={1}>{connected.gateway_host || srvHost}</Text>
                 </View>
-                <View style={styles.sDivider} />
                 <View style={styles.sRow}>
-                  <Text style={styles.sKey}>{t("port_label")}:</Text>
-                  <Text style={[styles.sVal, styles.sPort]}>{connected.gateway_port || connected.port || srvPort}</Text>
+                  <Text style={styles.sKey}>{t("http_label")}:</Text>
+                  <Text style={[styles.sVal, styles.sPort]}>{connected.http_port || connected.port || srvPort}</Text>
                 </View>
+                <View style={styles.sRow}>
+                  <Text style={styles.sKey}>{t("socks_label")}:</Text>
+                  <Text style={[styles.sVal, styles.sPort]}>{connected.socks_port || connected.gateway_port || connected.port || srvPort}</Text>
+                </View>
+                {connected.username ? (
+                  <>
+                    <View style={styles.sDivider} />
+                    <View style={styles.sColRow}>
+                      <Text style={styles.sKey}>{t("username_label")}:</Text>
+                      <Text testID="success-username" style={styles.sCredVal} numberOfLines={2}>{connected.username}</Text>
+                    </View>
+                    <View style={styles.sColRow}>
+                      <Text style={styles.sKey}>{t("password_label")}:</Text>
+                      <Text style={styles.sCredVal} numberOfLines={1}>{connected.password}</Text>
+                    </View>
+                  </>
+                ) : null}
               </View>
             ) : null}
 
-            <Pressable testID="success-copy-button" onPress={copyCreds} style={styles.copyCredsBtn}>
-              <Icon name="content-copy" size={16} color={colors.onBrandTertiary} />
-              <Text style={styles.copyCredsText}>{t("copy_creds")}</Text>
-            </Pressable>
+            <View style={styles.copyRow}>
+              <Pressable
+                testID="success-copy-http"
+                onPress={async () => {
+                  if (connected) {
+                    await Clipboard.setStringAsync(httpStr(connected));
+                    toast.show(`HTTP ${t("copied")}`, "success");
+                  }
+                }}
+                style={styles.copyHalfBtn}
+              >
+                <Icon name="content-copy" size={15} color={colors.onBrandTertiary} />
+                <Text style={styles.copyCredsText}>{t("copy_http")}</Text>
+              </Pressable>
+              <Pressable
+                testID="success-copy-socks"
+                onPress={async () => {
+                  if (connected) {
+                    await Clipboard.setStringAsync(socksStr(connected));
+                    toast.show(`SOCKS5 ${t("copied")}`, "success");
+                  }
+                }}
+                style={[styles.copyHalfBtn, { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary }]}
+              >
+                <Icon name="content-copy" size={15} color={colors.onBrandPrimary} />
+                <Text style={[styles.copyCredsText, { color: colors.onBrandPrimary }]}>{t("copy_socks")}</Text>
+              </Pressable>
+            </View>
             <Pressable testID="success-ok-button" onPress={() => setConnected(null)} style={styles.okBtn}>
               <Text style={styles.okText}>{t("ok")}</Text>
             </Pressable>
@@ -390,6 +433,8 @@ const useStyles = makeStyles((colors) => ({
   successTitle: { color: colors.onSurface, fontSize: 26, fontWeight: "800", marginBottom: spacing.lg },
   successBox: { width: "100%", borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.lg, gap: spacing.sm },
   sRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
+  sColRow: { gap: 4 },
+  sCredVal: { color: colors.onSurface, fontSize: 12, fontFamily: mono, fontWeight: "700" },
   sKey: { color: colors.onSurfaceTertiary, fontSize: font.sm, fontFamily: mono },
   sVal: { color: colors.onSurface, fontSize: font.sm, fontFamily: mono, fontWeight: "700", flexShrink: 1, textAlign: "right" },
   sPort: { color: colors.brandPrimary, fontSize: font.lg },
@@ -398,6 +443,8 @@ const useStyles = makeStyles((colors) => ({
   okText: { color: colors.onBrandPrimary, fontSize: font.base, fontWeight: "800", letterSpacing: 1 },
   copyCredsBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.lg, alignSelf: "stretch", height: 46, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.brandTertiary },
   copyCredsText: { color: colors.onBrandTertiary, fontSize: font.sm, fontWeight: "800", letterSpacing: 0.5 },
+  copyRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.lg, alignSelf: "stretch" },
+  copyHalfBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs, height: 46, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.brandTertiary },
   emptyCard: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.lg, padding: spacing.xxl, alignItems: "center", gap: spacing.md },
   emptyText: { color: colors.onSurfaceTertiary, fontSize: font.base, textAlign: "center" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center", padding: spacing.lg },

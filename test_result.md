@@ -111,6 +111,17 @@ user_problem_statement: >
   dan endpoint proxy-account untuk pelanggan.
 
 backend:
+  - task: "NodeMaven upstream integration in POST /api/hunt (real HTTP 8080 + SOCKS5 1080 creds)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "FASE 1 NodeMaven. Config via backend/.env. nodemaven_username() builds dynamic username country/region/city + unique sid per result + filter. /api/hunt emits gateway_host=gate.nodemaven.com, http_port=8080, socks_port=1080 when configured; falls back to VPS otherwise. Verified: real connection through gate.nodemaven.com (socks5:1080 & http:8080) returned live US residential exit IP 47.141.220.162. End-to-end working."
   - task: "Real proxy hunting via VPS gateway (IPRoyal residential upstream) - POST /api/hunt"
     implemented: true
     working: true
@@ -377,7 +388,7 @@ backend:
           working correctly. Customer hunter1 NOT deleted as requested. All scenarios verified successfully.
 
 frontend:
-  - task: "Hans-style connect: hide username-session (server:port only) + Establishing Connection animation"
+  - task: "Hans-style connect: Establishing Connection animation + NodeMaven creds (HTTP+SOCKS5) in Success modal"
     implemented: true
     working: "NA"
     file: "frontend/app/(tabs)/hunting.tsx"
@@ -387,7 +398,7 @@ frontend:
     status_history:
         -working: "NA"
         -agent: "main"
-        -comment: "Meniru UX HNProxy. (1) proxyString + copy/export sekarang hanya menyalin `server:port` (username/password sticky-session disembunyikan; auth via IP whitelist yang sudah ada di beranda). (2) Tombol HUBUNGKAN kini memicu startConnect(): modal 'Establishing Connection' 2 fase (INITIALIZING SESSION -> SYNCING TUNNEL PORT, progress bar Animated 2x1000ms) sebelum modal Success (IP Proxy/Location/ASN/Server/Port). Whitelist My IP + Reset Traffic + 480M+ IPS POOL sudah ada di beranda.tsx (tidak diubah). Lint clean, web bundle sukses 1420 modules tanpa error. Belum diuji via automated frontend agent (menunggu izin user)."
+        -comment: "HUBUNGKAN memicu modal 'Establishing Connection' 2 fase (INITIALIZING SESSION -> SYNCING TUNNEL PORT, progress bar Animated) sebelum modal Success. Success modal kini menampilkan IP Proxy/Location/ASN/Server + HTTP Port(8080) + SOCKS5 Port(1080) + Username + Password, dengan tombol SALIN HTTP & SALIN SOCKS5 (string host:port:user:pass yang benar-benar berfungsi ke NodeMaven). Copy/export daftar pakai string SOCKS5. Lint clean, web bundle sukses. Belum diuji via automated frontend agent (menunggu izin user)."
   - task: "Reseller frontend (admin panel + customer proxy/buy screens)"
     implemented: true
     working: "NA"

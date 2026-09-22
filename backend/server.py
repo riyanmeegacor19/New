@@ -36,6 +36,14 @@ DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "riyanmee123")
 PROXY_GATEWAY_TOKEN = os.environ.get("PROXY_GATEWAY_TOKEN", "")
 GATEWAY_CONTROL_PORT = int(os.environ.get("GATEWAY_CONTROL_PORT", "8090"))
 
+# --- NodeMaven upstream (Fase 1: app -> NodeMaven langsung) ----------------
+NODEMAVEN_HOST = os.environ.get("NODEMAVEN_HOST", "gate.nodemaven.com")
+NODEMAVEN_HTTP_PORT = int(os.environ.get("NODEMAVEN_HTTP_PORT", "8080"))
+NODEMAVEN_SOCKS_PORT = int(os.environ.get("NODEMAVEN_SOCKS_PORT", "1080"))
+NODEMAVEN_USER = os.environ.get("NODEMAVEN_USER", "")
+NODEMAVEN_PASS = os.environ.get("NODEMAVEN_PASS", "")
+NODEMAVEN_FILTER = os.environ.get("NODEMAVEN_FILTER", "medium")
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("riyanmee")
 
@@ -735,6 +743,32 @@ def _octet_match(a: str, b: str) -> int:
     return n
 
 
+def _nm_slug(text: str) -> str:
+    """Slug for NodeMaven region/city segments: lowercase, spaces/punct -> underscore."""
+    return re.sub(r"[^a-z0-9]+", "_", (text or "").strip().lower()).strip("_")
+
+
+def nodemaven_username(cc: str, region: str, city: str, session: str) -> str:
+    """Build a NodeMaven dynamic username encoding country/region/city + sticky sid.
+    e.g. riyanmeegacor19_gmail_com-country-us-region-california-city-los_angeles-sid-<hex>-filter-medium
+    """
+    parts = [NODEMAVEN_USER]
+    cc = (cc or "").strip().lower()
+    if cc:
+        parts.append(f"country-{cc}")
+    rslug = _nm_slug(region)
+    if rslug:
+        parts.append(f"region-{rslug}")
+    cslug = _nm_slug(city)
+    if cslug:
+        parts.append(f"city-{cslug}")
+    if session:
+        parts.append(f"sid-{session}")
+    if NODEMAVEN_FILTER:
+        parts.append(f"filter-{NODEMAVEN_FILTER}")
+    return "-".join(parts)
+
+
 async def _gateway_resolve(host: str, country: str, city: str, count: int) -> list:
     """Call the VPS gateway control API to hunt real residential exit IPs."""
     url = f"http://{host}:{GATEWAY_CONTROL_PORT}/resolve"
@@ -829,6 +863,7 @@ async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
     tgt_cc = (target_geo.get("country_code", "") or country).upper()
     tgt_country = target_geo.get("country", "") or _country_name(tgt_cc)
     tgt_city = target_geo.get("city", "")
+    tgt_region = target_geo.get("region", "")
     tgt_isp = target_geo.get("isp", "")
     tgt_asn = _asn_of(f"{target_geo.get('asn','')} {tgt_isp}")
     isp_display = (f"{tgt_asn} {tgt_isp}".strip() if tgt_asn else tgt_isp)
@@ -840,18 +875,42 @@ async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
     else:
         match_label = "Negara + Kota + ISP"
 
+    # NodeMaven upstream: every hunted result is a REAL, usable NodeMaven proxy
+    # (gate.nodemaven.com HTTP 8080 / SOCKS5 1080) targeted to the target's
+    # country + region + city with a unique sticky session per result.
+    nm_enabled = bool(NODEMAVEN_USER and NODEMAVEN_PASS)
+    # In ISP mode we widen to the whole country (no city lock) for more variety.
+    nm_city = "" if mode == "isp" else tgt_city
+
     results = []
     for i, ip in enumerate(same_subnet_ips(tip, count)):
-        sess = hashlib.md5(f"{ip}:{i}".encode()).hexdigest()[:8]
-        uname = user.username
-        if country:
-            uname += f"-country-{country}"
-            if city:
-                uname += f"-city-{city}"
-        uname += f"-session-{sess}"
+        sess = hashlib.md5(f"{ip}:{i}".encode()).hexdigest()[:12]
+        if nm_enabled:
+            uname = nodemaven_username(tgt_cc, tgt_region, nm_city, sess)
+            upw = NODEMAVEN_PASS
+            g_host = NODEMAVEN_HOST
+            http_port = NODEMAVEN_HTTP_PORT
+            socks_port = NODEMAVEN_SOCKS_PORT
+            g_port = socks_port
+            g_proto = "socks5"
+            upstream = "nodemaven"
+        else:
+            uname = user.username
+            if country:
+                uname += f"-country-{country}"
+                if city:
+                    uname += f"-city-{city}"
+            uname += f"-session-{sess}"
+            upw = proxy_pw
+            g_host = srv_host
+            http_port = srv_port
+            socks_port = srv_port
+            g_port = srv_port
+            g_proto = protocol
+            upstream = ""
         results.append({
             "ip": ip,
-            "port": srv_port,
+            "port": g_port,
             "country": tgt_country,
             "country_code": tgt_cc,
             "city": tgt_city,
@@ -863,10 +922,13 @@ async def hunt(body: HuntIn, user: Annotated[UserDoc, Depends(current_user)]):
             "octet_match": _octet_match(ip, tip),
             "session": sess,
             "username": uname,
-            "password": proxy_pw,
-            "gateway_host": srv_host,
-            "gateway_port": srv_port,
-            "protocol": protocol,
+            "password": upw,
+            "gateway_host": g_host,
+            "gateway_port": g_port,
+            "http_port": http_port,
+            "socks_port": socks_port,
+            "protocol": g_proto,
+            "upstream": upstream,
         })
 
     # Closest first (highest octet match), then lowest latency.

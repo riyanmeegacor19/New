@@ -77,7 +77,10 @@ export type ProxyResultT = {
   password?: string;
   gateway_host?: string;
   gateway_port?: number;
+  http_port?: number;
+  socks_port?: number;
   protocol?: string;
+  upstream?: string;
 };
 
 export type MyProxyT = {
