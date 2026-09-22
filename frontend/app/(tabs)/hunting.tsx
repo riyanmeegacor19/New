@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import { useMemo, useState } from "react";
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Animated, Easing, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, HuntMode, HuntResp, ProxyAccountT, ProxyResultT } from "@/src/api";
@@ -34,28 +34,55 @@ export default function HuntingScreen() {
   const [modeOpen, setModeOpen] = useState(false);
   const [result, setResult] = useState<HuntResp | null>(null);
   const [connected, setConnected] = useState<ProxyResultT | null>(null);
+  const [connecting, setConnecting] = useState<ProxyResultT | null>(null);
+  const [phase, setPhase] = useState(0);
+  const progress = useRef(new Animated.Value(0)).current;
+  const barWidth = progress.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] });
+
+  // Hans-style connect: show a 2-phase "Establishing Connection" animation
+  // (INITIALIZING SESSION -> SYNCING TUNNEL PORT) before revealing the result.
+  const startConnect = (p: ProxyResultT) => {
+    setConnecting(p);
+    setPhase(1);
+    progress.setValue(0);
+    Animated.timing(progress, {
+      toValue: 0.5,
+      duration: 1000,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start(({ finished }) => {
+      if (!finished) return;
+      setPhase(2);
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: 1000,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start(({ finished: done }) => {
+        if (!done) return;
+        setConnecting(null);
+        setPhase(0);
+        setConnected(p);
+      });
+    });
+  };
+
 
   const proxyQ = useQuery({ queryKey: ["proxy-account"], queryFn: () => api<ProxyAccountT>("/proxy-account") });
   const pa = proxyQ.data;
   const srvHost = pa?.host || user?.server_host;
   const srvPort = pa?.port || user?.server_port;
-  const srvUser = pa?.username || user?.username || "";
-  const srvPass = pa?.password || user?.proxy_password;
 
+  // Hans-style: expose ONLY server:port. Auth is via IP whitelist, so the
+  // per-session username/password is intentionally hidden from the customer.
   const proxyString = (p: ProxyResultT) => {
     const host = p.gateway_host || srvHost;
     const port = p.gateway_port || p.port || srvPort;
-    const u = p.username || srvUser;
-    const pw = p.password || srvPass;
-    return u ? `${host}:${port}:${u}:${pw}` : `${host}:${port}`;
+    return `${host}:${port}`;
   };
 
   const copyCreds = async () => {
-    if (connected) {
-      await Clipboard.setStringAsync(proxyString(connected));
-    } else {
-      await Clipboard.setStringAsync(`${srvHost}:${srvPort}${srvUser ? `:${srvUser}:${srvPass}` : ""}`);
-    }
+    await Clipboard.setStringAsync(connected ? proxyString(connected) : `${srvHost}:${srvPort}`);
     toast.show(t("creds_copied"), "success");
   };
 
@@ -222,7 +249,7 @@ export default function HuntingScreen() {
                       <Text style={styles.latency}>{p.latency_ms}ms</Text>
                     </View>
                   </Pressable>
-                  <Pressable testID={`proxy-connect-${idx}`} onPress={() => setConnected(p)} style={[styles.connectBtn, strong && styles.connectBtnStrong]}>
+                  <Pressable testID={`proxy-connect-${idx}`} onPress={() => startConnect(p)} style={[styles.connectBtn, strong && styles.connectBtnStrong]}>
                     <Text style={styles.connectText}>{t("connect")}</Text>
                   </Pressable>
                 </View>
@@ -254,6 +281,21 @@ export default function HuntingScreen() {
             })}
           </View>
         </Pressable>
+      </Modal>
+
+      <Modal visible={!!connecting} transparent animationType="fade" onRequestClose={() => {}}>
+        <View style={styles.modalBackdrop}>
+          <View testID="connecting-modal" style={styles.connectingCard}>
+            <Text style={styles.connectingTitle}>{t("establishing_connection")}</Text>
+            <ActivityIndicator size="large" color={colors.brandPrimary} style={styles.connectingSpinner} />
+            <Text style={styles.connectingPhase}>
+              {phase === 1 ? t("initializing_session") : t("syncing_tunnel_port")}
+            </Text>
+            <View style={styles.progressTrack}>
+              <Animated.View style={[styles.progressFill, { width: barWidth }]} />
+            </View>
+          </View>
+        </View>
       </Modal>
 
       <Modal visible={!!connected} transparent animationType="fade" onRequestClose={() => setConnected(null)}>
@@ -364,4 +406,10 @@ const useStyles = makeStyles((colors) => ({
   pickerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
   pickerLabel: { fontSize: font.base, fontWeight: "700" },
   pickerDesc: { color: colors.muted, fontSize: font.sm, marginTop: 2 },
+  connectingCard: { width: "100%", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.xl, alignItems: "center" },
+  connectingTitle: { color: colors.onSurface, fontSize: font.xxl, fontWeight: "800", textAlign: "center" },
+  connectingSpinner: { marginVertical: spacing.xl },
+  connectingPhase: { color: colors.onSurfaceTertiary, fontSize: font.sm, fontWeight: "700", letterSpacing: 3, marginBottom: spacing.lg, textAlign: "center" },
+  progressTrack: { width: "100%", height: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary, overflow: "hidden" },
+  progressFill: { height: "100%", borderRadius: radius.pill, backgroundColor: colors.brandPrimary },
 }));

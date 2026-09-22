@@ -377,6 +377,17 @@ backend:
           working correctly. Customer hunter1 NOT deleted as requested. All scenarios verified successfully.
 
 frontend:
+  - task: "Hans-style connect: hide username-session (server:port only) + Establishing Connection animation"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/hunting.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Meniru UX HNProxy. (1) proxyString + copy/export sekarang hanya menyalin `server:port` (username/password sticky-session disembunyikan; auth via IP whitelist yang sudah ada di beranda). (2) Tombol HUBUNGKAN kini memicu startConnect(): modal 'Establishing Connection' 2 fase (INITIALIZING SESSION -> SYNCING TUNNEL PORT, progress bar Animated 2x1000ms) sebelum modal Success (IP Proxy/Location/ASN/Server/Port). Whitelist My IP + Reset Traffic + 480M+ IPS POOL sudah ada di beranda.tsx (tidak diubah). Lint clean, web bundle sukses 1420 modules tanpa error. Belum diuji via automated frontend agent (menunggu izin user)."
   - task: "Reseller frontend (admin panel + customer proxy/buy screens)"
     implemented: true
     working: "NA"
