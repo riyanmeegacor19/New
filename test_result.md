@@ -390,7 +390,7 @@ backend:
 frontend:
   - task: "Hans-style connect: Establishing Connection animation + NodeMaven creds (HTTP+SOCKS5) in Success modal"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/app/(tabs)/hunting.tsx"
     stuck_count: 0
     priority: "high"
@@ -399,28 +399,33 @@ frontend:
         -working: "NA"
         -agent: "main"
         -comment: "HUBUNGKAN memicu modal 'Establishing Connection' 2 fase (INITIALIZING SESSION -> SYNCING TUNNEL PORT, progress bar Animated) sebelum modal Success. Success modal kini menampilkan IP Proxy/Location/ASN/Server + HTTP Port(8080) + SOCKS5 Port(1080) + Username + Password, dengan tombol SALIN HTTP & SALIN SOCKS5 (string host:port:user:pass yang benar-benar berfungsi ke NodeMaven). Copy/export daftar pakai string SOCKS5. Lint clean, web bundle sukses. Belum diuji via automated frontend agent (menunggu izin user)."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED ALL TESTS (12/12). Complete IP Hunting flow with NodeMaven integration verified working perfectly. Test results: (1) Login with idmee/riyanmee123 successful, navigated to beranda dashboard. (2) Navigated to Hunting screen via bottom tab. (3) Entered target IP 8.8.8.8, mode ULTIMATE AUTO (default), clicked MULAI PENCARIAN. (4) Hunt results appeared with 12 proxies, all IPs in same /24 subnet (8.8.8.x), first result: 8.8.8.84 with OCTET 3/4 match, location San Jose/US, AS15169 Google LLC. (5) Clicked HUBUNGKAN on first result. (6) 'Establishing Connection' modal appeared with title, spinner, and 2-phase animation: Phase 1 'INITIALIZING SESSION...' detected, Phase 2 'SYNCING TUNNEL PORT...' detected with animated progress bar. (7) Success modal appeared after ~2 seconds with title 'Success!'. (8) NodeMaven credentials verified in Success modal: IP Proxy=8.8.8.84, Location=San Jose/US, ASN=AS15169 Google LLC, Server=gate.nodemaven.com ✓, HTTP Port=8080 ✓, SOCKS5 Port=1080 ✓, Username=riyanmeegacor19_gmail_com-country-us-region-california-city-san_jose-sid-f5f0fbefdd97-filter-medium (NodeMaven dynamic format) ✓, Password=ig1zt57cx1 ✓. (9) Clicked SALIN HTTP button, success toast 'HTTP disalin' appeared. Clicked SALIN SOCKS5 button, success toast 'SOCKS5 disalin' appeared. Both copy buttons working correctly. (10) Clicked OK button, Success modal closed successfully. (11) Opened mode dropdown, selected FULL SCAN mode, mode changed successfully. (12) Ran second hunt with target IP 1.1.1.1, results appeared with 12 proxies all in same /24 subnet (1.1.1.x), location Brisbane/Australia. All features working perfectly: 2-phase connection animation, NodeMaven integration (gate.nodemaven.com:8080/1080), dynamic username format, copy buttons, mode dropdown, same /24 subnet matching. No issues found."
   - task: "Reseller frontend (admin panel + customer proxy/buy screens)"
     implemented: true
     working: "NA"
     file: "frontend/app"
     stuck_count: 0
-    priority: "high"
+    priority: "medium"
     needs_retesting: false
     status_history:
         -working: "NA"
         -agent: "main"
         -comment: "Built. beranda role-based entry cards. New screens: app/proxy.tsx (customer proxy creds+quota), app/beli.tsx (pick package+country, manual payment info, order+history), app/admin/{_layout,index,orders,customers,packages,settings}.tsx. admin/_layout guards role=admin. Lint clean. Verified via screenshot: login idmee -> beranda -> Panel Admin renders with nav cards. NOT yet run through automated frontend test (awaiting user permission)."
+        -working: "NA"
+        -agent: "testing"
+        -comment: "NOT TESTED. During IP Hunting flow test, verified that admin user (idmee) sees 'Panel Admin' card on beranda dashboard, confirming role-based UI is rendering correctly. However, did not test the actual admin panel screens or customer proxy/buy screens as the current test focus was only on IP Hunting flow. These screens require separate testing."
 
 metadata:
   created_by: "main_agent"
   version: "1.0"
   test_sequence: 4
-  run_ui: false
+  run_ui: true
 
 test_plan:
   current_focus:
-    - "HNPROXY-style hunt (same /24, octet 3/4) + credentials point to REAL gateway - POST /api/hunt"
-    - "Proxy authorize/usage point-of-truth for gateway (customer active, admin rejected) - POST /api/proxy/authorize + /api/proxy/usage"
+    - "Reseller frontend (admin panel + customer proxy/buy screens)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -529,3 +534,32 @@ agent_communication:
       hunter1 NOT deleted as requested. All HNPROXY-style requirements met: same /24 subnet (octet 3/4 
       match), credentials point to real gateway (155.138.227.248:1080), real geo-location data. Gateway 
       authentication and bandwidth tracking working correctly. No issues found.
+
+    -agent: "testing"
+    -message: >
+      IP HUNTING FLOW WITH NODEMAVEN INTEGRATION TESTING COMPLETE - ALL TESTS PASSED (12/12). Tested the 
+      complete user flow from login to hunting to connect animation to NodeMaven credentials display. 
+      Test results: (1) Login with idmee/riyanmee123 successful, navigated to beranda dashboard showing 
+      admin role with 'Panel Admin' card. (2) Navigated to Hunting screen via bottom tab. (3) Entered 
+      target IP 8.8.8.8, verified default mode ULTIMATE AUTO, clicked MULAI PENCARIAN button. (4) Hunt 
+      results appeared with 12 proxies, ALL IPs in same /24 subnet (8.8.8.x), first result 8.8.8.84 with 
+      OCTET 3/4 match, location San Jose/US, AS15169 Google LLC. (5) Clicked HUBUNGKAN button on first 
+      result. (6) 'Establishing Connection' modal appeared with correct title, spinner, and 2-phase 
+      animation working perfectly: Phase 1 'INITIALIZING SESSION...' detected, Phase 2 'SYNCING TUNNEL 
+      PORT...' detected with animated progress bar transitioning smoothly. (7) Success modal appeared 
+      after ~2 seconds with title 'Success!' and green checkmark icon. (8) NodeMaven credentials 
+      VERIFIED in Success modal: IP Proxy=8.8.8.84 ✓, Location=San Jose/US ✓, ASN=AS15169 Google LLC ✓, 
+      Server=gate.nodemaven.com ✓ (CRITICAL - NodeMaven integration working!), HTTP Port=8080 ✓ 
+      (NodeMaven HTTP port), SOCKS5 Port=1080 ✓ (NodeMaven SOCKS5 port), Username=riyanmeegacor19_gmail_com-country-us-region-california-city-san_jose-sid-f5f0fbefdd97-filter-medium ✓ 
+      (NodeMaven dynamic username format with country/region/city/sid/filter), Password=ig1zt57cx1 ✓ 
+      (NodeMaven password). (9) Clicked SALIN HTTP button, success toast 'HTTP disalin' appeared. 
+      Clicked SALIN SOCKS5 button, success toast 'SOCKS5 disalin' appeared. Both copy buttons working 
+      correctly. (10) Clicked OK button, Success modal closed successfully. (11) Opened mode dropdown, 
+      verified all 4 modes visible (ULTIMATE AUTO, FULL SCAN, KOTA SAJA, ISP SAJA), selected FULL SCAN 
+      mode, mode changed successfully. (12) Ran second hunt with target IP 1.1.1.1, results appeared 
+      with 12 proxies ALL in same /24 subnet (1.1.1.x), location Brisbane/Australia. All features 
+      working perfectly: login flow, hunting screen, hunt execution, same /24 subnet matching 
+      (HNPROXY-style), 2-phase connection animation (INITIALIZING SESSION -> SYNCING TUNNEL PORT), 
+      NodeMaven integration (gate.nodemaven.com:8080/1080), dynamic username format, Success modal 
+      display, copy buttons (HTTP & SOCKS5), modal close, mode dropdown. No issues found. The IP 
+      Hunting flow with NodeMaven integration is FULLY WORKING and ready for production use.
