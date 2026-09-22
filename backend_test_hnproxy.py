@@ -11,7 +11,7 @@ import json
 import sys
 
 # Configuration
-BASE_URL = "https://dependency-installer-13.preview.emergentagent.com/api"
+BASE_URL = "https://github-branch-main.preview.emergentagent.com/api"
 ADMIN_USERNAME = "idmee"
 ADMIN_PASSWORD = "riyanmee123"
 CUSTOMER_USERNAME = "hunter1"
