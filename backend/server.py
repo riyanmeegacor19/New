@@ -5,6 +5,7 @@ import os
 import random
 import re
 import time
+from urllib.parse import quote
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -45,6 +46,33 @@ NODEMAVEN_USER = os.environ.get("NODEMAVEN_USER", "")
 NODEMAVEN_PASS = os.environ.get("NODEMAVEN_PASS", "")
 NODEMAVEN_FILTER = os.environ.get("NODEMAVEN_FILTER", "medium")
 IP_ECHO_URL = "https://api.ipify.org?format=json"
+
+# --- Other upstream pools (multi-pool AUTO) --------------------------------
+IPROYAL_HOST = os.environ.get("IPROYAL_HOST", "geo.iproyal.com")
+IPROYAL_HTTP_PORT = int(os.environ.get("IPROYAL_HTTP_PORT", "12321"))
+IPROYAL_SOCKS_PORT = int(os.environ.get("IPROYAL_SOCKS_PORT", "32325"))
+IPROYAL_USER = os.environ.get("IPROYAL_USER", "")
+IPROYAL_PASS = os.environ.get("IPROYAL_PASS", "")
+
+DATAIMPULSE_HOST = os.environ.get("DATAIMPULSE_HOST", "gw.dataimpulse.com")
+DATAIMPULSE_HTTP_PORT = int(os.environ.get("DATAIMPULSE_HTTP_PORT", "823"))
+DATAIMPULSE_SOCKS_PORT = int(os.environ.get("DATAIMPULSE_SOCKS_PORT", "824"))
+DATAIMPULSE_USER = os.environ.get("DATAIMPULSE_USER", "")
+DATAIMPULSE_PASS = os.environ.get("DATAIMPULSE_PASS", "")
+
+SX_HOST = os.environ.get("SX_HOST", "")
+SX_HTTP_PORT = int(os.environ.get("SX_HTTP_PORT", "0") or 0)
+SX_SOCKS_PORT = int(os.environ.get("SX_SOCKS_PORT", "0") or 0)
+SX_USER = os.environ.get("SX_USER", "")
+SX_PASS = os.environ.get("SX_PASS", "")
+
+# label + whether the pool supports dynamic per-location targeting (used by AUTO)
+UPSTREAM_META = {
+    "nodemaven": {"label": "NodeMaven", "targeting": True},
+    "iproyal": {"label": "IPRoyal", "targeting": True},
+    "dataimpulse": {"label": "DataImpulse", "targeting": True},
+    "sx": {"label": "SX Mobile", "targeting": False},
+}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("riyanmee")
@@ -812,13 +840,59 @@ async def _gateway_resolve_pool(host: str, country: str, city: str, rounds: int,
     return pool
 
 
-async def _nodemaven_resolve_one(cc: str, region: str, city: str, idx: int) -> Optional[dict]:
-    """Open ONE NodeMaven sticky session (country/region/city) and discover the
-    REAL exit IP by calling an IP-echo through the proxy. Returns the real ip +
-    the exact username/sid so CONNECT reproduces the same exit IP."""
-    sid = hashlib.md5(f"{cc}:{city}:{idx}:{random.random()}".encode()).hexdigest()[:12]
-    uname = nodemaven_username(cc, region, city, sid)
-    proxy_url = f"http://{uname}:{NODEMAVEN_PASS}@{NODEMAVEN_HOST}:{NODEMAVEN_HTTP_PORT}"
+def build_upstream_creds(provider: str, cc: str, region: str, city: str, sid: str) -> Optional[dict]:
+    """Return connection creds for a given upstream pool, or None if not configured.
+    Targeting-capable pools embed country/region/city + sticky sid so CONNECT
+    reproduces the same exit IP."""
+    cc = (cc or "").lower()
+    cslug = _nm_slug(city)
+    if provider == "nodemaven":
+        if not (NODEMAVEN_USER and NODEMAVEN_PASS):
+            return None
+        return {"host": NODEMAVEN_HOST, "http_port": NODEMAVEN_HTTP_PORT, "socks_port": NODEMAVEN_SOCKS_PORT,
+                "protocol": "socks5", "username": nodemaven_username(cc.upper(), region, city, sid), "password": NODEMAVEN_PASS}
+    if provider == "iproyal":
+        if not (IPROYAL_USER and IPROYAL_PASS):
+            return None
+        pw = IPROYAL_PASS + (f"_country-{cc}" if cc else "")
+        if cslug:
+            pw += f"_city-{cslug}"
+        pw += f"_session-{sid[:8]}_lifetime-30m"
+        return {"host": IPROYAL_HOST, "http_port": IPROYAL_HTTP_PORT, "socks_port": IPROYAL_SOCKS_PORT,
+                "protocol": "socks5", "username": IPROYAL_USER, "password": pw}
+    if provider == "dataimpulse":
+        if not (DATAIMPULSE_USER and DATAIMPULSE_PASS):
+            return None
+        u = DATAIMPULSE_USER + (f"__cr.{cc}" if cc else "")
+        if cslug:
+            u += f";city.{cslug}"
+        u += f";sessid.{sid}"
+        return {"host": DATAIMPULSE_HOST, "http_port": DATAIMPULSE_HTTP_PORT, "socks_port": DATAIMPULSE_SOCKS_PORT,
+                "protocol": "socks5", "username": u, "password": DATAIMPULSE_PASS}
+    if provider == "sx":
+        if not (SX_HOST and SX_USER and SX_PASS):
+            return None
+        # SX = fixed per-port config (targeting baked into the port). cc/city ignored.
+        return {"host": SX_HOST, "http_port": SX_HTTP_PORT, "socks_port": SX_SOCKS_PORT or SX_HTTP_PORT,
+                "protocol": "http", "username": SX_USER, "password": SX_PASS}
+    return None
+
+
+def list_enabled_upstreams() -> list:
+    out = []
+    for pid, meta in UPSTREAM_META.items():
+        if build_upstream_creds(pid, "us", "", "", "probe1234"):
+            out.append({"id": pid, "label": meta["label"], "targeting": meta["targeting"]})
+    return out
+
+
+async def _upstream_resolve_one(provider: str, cc: str, region: str, city: str, idx: int) -> Optional[dict]:
+    """Open ONE upstream sticky session and discover its REAL exit IP via IP-echo."""
+    sid = hashlib.md5(f"{provider}:{cc}:{city}:{idx}:{random.random()}".encode()).hexdigest()[:12]
+    creds = build_upstream_creds(provider, cc, region, city, sid)
+    if not creds:
+        return None
+    proxy_url = f"http://{quote(creds['username'], safe='')}:{quote(creds['password'], safe='')}@{creds['host']}:{creds['http_port']}"
     t0 = time.monotonic()
     try:
         async with httpx.AsyncClient(proxy=proxy_url, timeout=30) as client:
@@ -828,12 +902,13 @@ async def _nodemaven_resolve_one(cc: str, region: str, city: str, idx: int) -> O
         return None
     if not ip:
         return None
-    return {"ip": ip, "sid": sid, "username": uname, "latency_ms": int((time.monotonic() - t0) * 1000)}
+    return {"ip": ip, "sid": sid, "provider": provider, "creds": creds,
+            "latency_ms": int((time.monotonic() - t0) * 1000)}
 
 
-async def _nodemaven_resolve_pool(cc: str, region: str, city: str, count: int) -> list:
-    """Open `count` NodeMaven sessions in parallel, return unique real exit IPs."""
-    tasks = [_nodemaven_resolve_one(cc, region, city, i) for i in range(count)]
+async def _upstream_resolve_pool(provider: str, cc: str, region: str, city: str, count: int) -> list:
+    """Open `count` sessions of ONE provider in parallel; return unique real IPs."""
+    tasks = [_upstream_resolve_one(provider, cc, region, city, i) for i in range(count)]
     res = await asyncio.gather(*tasks, return_exceptions=True)
     seen: set = set()
     pool: list = []
